@@ -48,7 +48,7 @@ function sharedSettings() { return context().extensionSettings?.[KEY] || {}; }
 function localState() { return normalizeState(context().chatMetadata?.[KEY]); }
 function sharedState() { return normalizeState(sharedSettings().state); }
 function readState() { return editScope === 'global' ? sharedState() : localState(); }
-function effectiveState() { return mergeStates(sharedState(), localState()); }
+function effectiveState() { return mergeStates(sharedSettings().state, context().chatMetadata?.[KEY]); }
 function scopeLabel() { return editScope === 'global' ? '모든 채팅' : '이 채팅'; }
 function liveScope() { return { chat: chatKey(), preset: presetKey(), state: effectiveState() }; }
 async function saveShared(update) {
@@ -83,17 +83,19 @@ function ensureAdapter() {
     } catch (error) { adapterError = error.message; }
 }
 function promptCatalog() {
-    if (!presetKey() || !wiredManager) return [];
+    const source = presetKey();
+    if (!source || !wiredManager) return [];
     const manager = wiredManager;
     const order = manager.getPromptOrderForCharacter(manager.activeCharacter);
     return order.flatMap(entry => {
         const p = manager.getPromptById(entry.identifier);
         // Match ST's own restrictions for structural markers.
         if (!p || (typeof manager.isPromptToggleAllowed === 'function' && !manager.isPromptToggleAllowed(p))) return [];
-        return [{ kind: 'prompt', source: presetKey(), id: String(p.identifier), name: p.name || p.identifier,
+        return [{ kind: 'prompt', source, id: String(p.identifier), name: p.name || p.identifier,
             enabled: Boolean(entry.enabled), content: String(p.content || ''), strategy: '' }];
     });
 }
+const indexItems = items => new Map(items.map(item => [keyOf(item), item]));
 function catalog() { return tab === 'prompt' ? promptCatalog() : worldCatalog; }
 function lookup(item) {
     const list = item.kind === 'prompt' ? promptCatalog() : worldChat === chatKey() ? worldCatalog : [];
@@ -266,9 +268,10 @@ function openCombinations() {
         if (!label) return notify('조합 이름을 입력해주세요.');
         const all = Array.isArray(sharedSettings().combinations) ? sharedSettings().combinations : [];
         if (all.some(x => x.source === source && x.name === label)) return notify('같은 이름이 있어요. 다른 이름으로 저장하거나 기존 조합을 삭제해주세요.');
-        const effective = editScope === 'global' ? sharedState() : effectiveState();
+        const effective = indexItems((editScope === 'global' ? sharedState() : effectiveState()).items);
+        const originals = indexItems(promptCatalog());
         const items = readState().items.filter(x => x.kind === 'prompt' && x.source === source).map(x => ({ ...x,
-            state: effective.items.find(e => keyOf(e) === keyOf(x))?.state ?? lookup(x)?.enabled ?? null }));
+            state: effective.get(keyOf(x))?.state ?? originals.get(keyOf(x))?.enabled ?? null }));
         if (!items.length) return notify('먼저 프롬프트 항목을 추가해주세요.');
         saving = true; closeDialog(); render();
         try { await saveShared(settings => { settings.combinations = [...all, { name: label, source, version: 1, items }]; }); notify('조합을 저장했어요.'); }
@@ -300,6 +303,18 @@ function openCombinations() {
     d.append(list, el('p', 'csb-muted', '불러오면 선택한 범위에서 현재 프리셋의 목록과 ON/OFF가 교체됩니다. 조합은 다른 채팅에서도 사용할 수 있습니다.'));
 }
 
+function moveItem(state, key, direction) {
+    const index = state.items.findIndex(item => keyOf(item) === key), item = state.items[index];
+    if (!item) return;
+    for (let next = index + direction; next >= 0 && next < state.items.length; next += direction) {
+        const other = state.items[next];
+        if (other.kind === item.kind && other.group === item.group) {
+            [state.items[index], state.items[next]] = [other, item];
+            break;
+        }
+    }
+}
+
 function render() {
     if (!panel) return;
     const previousScroll = body.scrollTop;
@@ -317,7 +332,10 @@ function render() {
     if (!hasChat) { body.append(el('div', 'csb-empty', '채팅을 열면 원하는 항목을 골라 담을 수 있어요.')); return; }
     const error = tab === 'prompt' ? adapterError : !hasWorldHook ? '이 SillyTavern 버전은 월드인포 제어를 지원하지 않습니다.' : worldReadError;
     if (error) body.append(el('p', 'csb-error', error));
-    const items = readState().items.filter(item => item.kind === tab && `${item.alias} ${item.name} ${item.group} ${item.source}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+    const query = search.toLocaleLowerCase();
+    const items = readState().items.filter(item => item.kind === tab && `${item.alias} ${item.name} ${item.group} ${item.source}`.toLocaleLowerCase().includes(query));
+    const originals = indexItems(tab === 'prompt' ? promptCatalog() : worldChat === chatKey() ? worldCatalog : []);
+    const effectiveItems = editing ? null : indexItems((editScope === 'global' ? sharedState() : effectiveState()).items);
     if (editing) {
         const actions = el('div', 'csb-bulk');
         for (const [label, action] of [['ON/OFF 초기화', 'reset'], ['선택 항목 비우기', 'clear']]) {
@@ -327,7 +345,7 @@ function render() {
     }
     if (!items.length) {
         const empty = el('div', 'csb-empty');
-        empty.append(el('span', 'csb-empty-icon', '＋'), el('strong', '', search ? '검색 결과가 없어요' : '자주 바꾸는 항목만 골라두세요'), el('p', '', search ? '다른 검색어를 입력해보세요.' : '위의 항목 추가 버튼에서 여러 개를 한 번에 선택할 수 있어요.'));
+        empty.append(el('strong', '', search ? '검색 결과가 없어요' : '자주 바꾸는 항목만 골라두세요'), el('p', '', search ? '다른 검색어를 입력해보세요.' : '위의 항목 추가 버튼에서 여러 개를 한 번에 선택할 수 있어요.'));
         body.append(empty);
     }
     const groups = new Map();
@@ -335,49 +353,49 @@ function render() {
     for (const [group, members] of groups) {
         const section = el('section', 'csb-section');
         if (group) section.append(el('h4', '', group));
-        for (const item of members) {
-            const native = lookup(item), key = keyOf(item);
+        for (const [index, item] of members.entries()) {
+            const key = keyOf(item), native = originals.get(key);
             const row = el('div', `csb-row${native ? '' : ' is-missing'}${editing ? ' is-editing' : ''}`);
             const copy = button('', () => showDetails(item), 'csb-item-copy', `${item.alias || native?.name || item.name} · 내용 미리 보기`);
             copy.append(el('strong', '', item.alias || native?.name || item.name));
             const source = item.kind === 'prompt' ? presetName(item.source) : item.source;
-            copy.append(el('small', 'csb-muted', native ? source : `${source} · ${unavailableReason(item)}`));
-            const effective = (editScope === 'global' ? sharedState() : effectiveState()).items.find(x => keyOf(x) === key);
-            const on = effective?.state ?? native?.enabled ?? false;
-            const toggle = button(on ? 'ON' : 'OFF', () => changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) found.state = !on; }), `csb-switch${on ? ' is-on' : ''}`);
-            toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-checked', String(on)); toggle.setAttribute('aria-label', `${item.alias || item.name} 켜기/끄기`);
-            toggle.disabled = busy || !native || Boolean(error);
             row.append(copy);
-            if (item.kind === 'world') {
-                const select = el('select', 'csb-mode');
-                select.setAttribute('aria-label', `${item.alias || item.name} 주입 방식`);
-                const icons = { constant: '🔵', normal: '🟢', vectorized: '🔗' };
-                for (const [value, label] of Object.entries(icons)) {
-                    const option = el('option', '', label); option.value = value; select.append(option);
+            if (!editing) {
+                copy.append(el('small', 'csb-muted', native ? source : `${source} · ${unavailableReason(item)}`));
+                const effective = effectiveItems.get(key);
+                const on = effective?.state ?? native?.enabled ?? false;
+                const toggle = button(on ? 'ON' : 'OFF', () => changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) found.state = !on; }), `csb-switch${on ? ' is-on' : ''}`);
+                toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-checked', String(on)); toggle.setAttribute('aria-label', `${item.alias || item.name} 켜기/끄기`);
+                toggle.disabled = busy || !native || Boolean(error);
+                if (item.kind === 'world') {
+                    const select = el('select', 'csb-mode');
+                    select.setAttribute('aria-label', `${item.alias || item.name} 주입 방식`);
+                    const icons = { constant: '🔵', normal: '🟢', vectorized: '🔗' };
+                    for (const [value, label] of Object.entries(icons)) {
+                        const option = el('option', '', label); option.value = value; select.append(option);
+                    }
+                    select.value = effective?.activation || native?.activation || 'normal';
+                    select.title = `${activationLabels[effective?.activation || native?.activation] || ''}${item.activation ? '' : ' · 기본값 따름'}`;
+                    select.disabled = busy || !native || Boolean(error);
+                    select.addEventListener('change', () => {
+                        const mode = select.value || null;
+                        changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) found.activation = mode; });
+                    });
+                    row.append(select);
                 }
-                select.value = effective?.activation || native?.activation || 'normal';
-                select.title = `${activationLabels[effective?.activation || native?.activation] || ''}${item.activation ? '' : ' · 기본값 따름'}`;
-                select.disabled = busy || !native || Boolean(error);
-                select.addEventListener('change', () => {
-                    const mode = select.value || null;
-                    changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) found.activation = mode; });
-                });
-                row.append(select);
-            }
-            row.append(toggle);
-            if (editing) {
+                row.append(toggle);
+            } else {
                 const actions = el('div', 'csb-row-actions');
                 const actionsList = [
                     ['edit', '이름·구획 변경', 'fa-feather', () => editItem(item)],
-                    ['up', '위로 이동', 'fa-arrow-up', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index - 1; j >= 0; j--) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
-                    ['down', '아래로 이동', 'fa-arrow-down', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index + 1; j < s.items.length; j++) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
+                    ['up', '위로 이동', 'fa-arrow-up', () => changeState(s => moveItem(s, key, -1))],
+                    ['down', '아래로 이동', 'fa-arrow-down', () => changeState(s => moveItem(s, key, 1))],
                     ['remove', '제거', 'fa-trash-can', () => changeState(s => { s.items = s.items.filter(x => keyOf(x) !== key); })],
                 ];
                 for (const [id, label, icon, action] of actionsList) {
                     const b = button('', action, 'csb-action-icon', label);
                     const glyph = el('i', `fa-solid ${icon}`); glyph.setAttribute('aria-hidden', 'true'); b.append(glyph);
                     b.dataset.rowAction = id; b.setAttribute('aria-label', `${item.alias || item.name} · ${label}`);
-                    const index = members.indexOf(item);
                     b.disabled = busy || (id === 'up' && index === 0 && !search) || (id === 'down' && index === members.length - 1 && !search);
                     actions.append(b);
                 }
@@ -391,21 +409,31 @@ function render() {
 }
 
 async function refreshWorlds() {
-    if (worldRead) { await worldRead.promise; if (worldChat !== chatKey()) return refreshWorlds(); return; }
-    const token = ++refreshToken, key = chatKey();
-    if (!hasWorldHook || !key) { worldCatalog = []; return; }
-    const request = { token, chat: key, promise: null };
-    worldRead = request;
-    try {
-        request.promise = getSortedEntries();
-        await request.promise;
-        if (token !== refreshToken || key !== chatKey()) return;
-        worldReadError = '';
-    } catch (error) {
-        if (token !== refreshToken || key !== chatKey()) return;
-        worldCatalog = []; worldReadError = `월드인포를 읽지 못했습니다: ${error.message}`;
-    } finally { if (worldRead === request) worldRead = null; }
-    render();
+    if (!active || !hasWorldHook || !chatKey()) { worldCatalog = []; return; }
+    let request = worldRead;
+    if (!request) {
+        request = { token: ++refreshToken, chat: chatKey(), promise: null };
+        worldRead = request;
+        // Every caller awaits the handled task, never the raw rejecting read.
+        request.promise = (async () => {
+            const isCurrent = () => active && request.token === refreshToken && request.chat === chatKey();
+            try {
+                await getSortedEntries();
+                if (isCurrent()) worldReadError = '';
+            } catch (error) {
+                if (isCurrent()) {
+                    worldCatalog = [];
+                    worldReadError = `월드인포를 읽지 못했습니다: ${error.message}`;
+                }
+            } finally {
+                if (worldRead === request) worldRead = null;
+            }
+            if (isCurrent()) render();
+        })();
+    }
+    await request.promise;
+    // A switched chat needs a fresh read, including when the old read failed.
+    if (active && (request.chat !== chatKey() || request.token !== refreshToken)) return refreshWorlds();
 }
 function scheduleRefresh() {
     if (!active) return;
@@ -432,10 +460,8 @@ function setPanelOpen(open) {
 function showFloatingIcon() {
     if (!active || !launcher) return;
     const { x, y } = positionPixels(previewPosition || savedPosition, floatingViewport());
-    // Inline priorities protect the actual control from mobile theme rules.
-    for (const [name, value] of Object.entries({ display:'block', position:'fixed', left:`${x}px`, top:`${y}px`, right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', 'z-index':'2147483646', 'border-radius':'0', background:'transparent', color:'#37433b', border:'0', 'font-size':'27px', 'line-height':'44px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'none', 'touch-action':'none', 'user-select':'none', cursor:'grab' })) {
-        launcher.style.setProperty(name, value, 'important');
-    }
+    launcher.style.setProperty('left', `${x}px`, 'important');
+    launcher.style.setProperty('top', `${y}px`, 'important');
     // The icon itself (not only the panel) must escape clipping/stacking contexts.
     if (typeof launcher.showPopover === 'function') {
         launcher.setAttribute('popover', 'manual');
@@ -445,6 +471,10 @@ function showFloatingIcon() {
 function buildUI() {
     if (panel) return;
     launcher = button('', () => setPanelOpen(panel.hidden), 'csb-launcher', '눌러서 열기 · 끌어서 이동');
+    // Inline priorities protect the actual control from mobile theme rules.
+    for (const [name, value] of Object.entries({ display:'block', position:'fixed', right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', 'z-index':'2147483646', 'border-radius':'0', background:'transparent', color:'#37433b', border:'0', 'font-size':'27px', 'line-height':'44px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'none', 'touch-action':'none', 'user-select':'none', cursor:'grab' })) {
+        launcher.style.setProperty(name, value, 'important');
+    }
     const art = el('img', 'csb-launcher-art');
     art.src = new URL('./assets/strawberry-cake.png', import.meta.url).href;
     art.alt = ''; art.draggable = false; art.setAttribute('aria-hidden', 'true');
@@ -520,39 +550,39 @@ function init() {
 }
 
 export function onEnable() {
-if (active) return;
-active = true;
-globalThis.addEventListener?.('resize', showFloatingIcon);
-globalThis.visualViewport?.addEventListener('resize', showFloatingIcon);
-globalThis.visualViewport?.addEventListener('scroll', showFloatingIcon);
-if (hasWorldHook) listen(event_types.WORLDINFO_ENTRIES_LOADED, payload => {
-    if (!worldRead || (worldRead.chat === chatKey() && worldRead.token === refreshToken)) {
-        worldCatalog = catalogWorlds(payload); worldChat = chatKey();
+    if (active) return;
+    active = true;
+    globalThis.addEventListener?.('resize', showFloatingIcon);
+    globalThis.visualViewport?.addEventListener('resize', showFloatingIcon);
+    globalThis.visualViewport?.addEventListener('scroll', showFloatingIcon);
+    if (hasWorldHook) listen(event_types.WORLDINFO_ENTRIES_LOADED, payload => {
+        if (!worldRead || (worldRead.chat === chatKey() && worldRead.token === refreshToken)) {
+            worldCatalog = catalogWorlds(payload); worldChat = chatKey();
+        }
+        const scope = getScope();
+        if (scope.chat) applyWorldOverrides(payload, scope.state);
+    });
+    listen(event_types.GENERATION_AFTER_COMMANDS, (_type, _options, dryRun) => {
+        ensureAdapter();
+        if (!dryRun) { generation = structuredClone(liveScope()); setTimeout(render, 0); }
+    });
+    for (const name of ['GENERATION_ENDED', 'GENERATION_STOPPED']) if (event_types[name]) listen(event_types[name], () => {
+        generation = null; scheduleRefresh();
+    });
+    for (const name of ['CHAT_CHANGED', 'OAI_PRESET_CHANGED_AFTER']) if (event_types[name]) listen(event_types[name], () => {
+        if (generation && (generation.chat !== chatKey() || generation.preset !== presetKey())) {
+            if (isGenerating()) { stopGeneration(); notify('채팅 또는 프리셋이 바뀌어 진행 중인 생성을 중단했습니다.'); }
+            generation = null;
+        }
+        closeDialog(); worldCatalog = []; worldChat = ''; refreshToken++; search = '';
+        if (panel) panel.querySelector('.csb-search').value = '';
+        scheduleRefresh();
+    });
+    for (const name of ['WORLDINFO_SETTINGS_UPDATED', 'WORLDINFO_UPDATED', 'CHARACTER_EDITED', 'CHATCOMPLETION_SOURCE_CHANGED']) {
+        if (event_types[name]) listen(event_types[name], scheduleRefresh);
     }
-    const scope = getScope();
-    if (scope.chat) applyWorldOverrides(payload, scope.state);
-});
-listen(event_types.GENERATION_AFTER_COMMANDS, (_type, _options, dryRun) => {
-    ensureAdapter();
-    if (!dryRun) { generation = structuredClone(liveScope()); setTimeout(render, 0); }
-});
-for (const name of ['GENERATION_ENDED', 'GENERATION_STOPPED']) if (event_types[name]) listen(event_types[name], () => {
-    generation = null; scheduleRefresh();
-});
-for (const name of ['CHAT_CHANGED', 'OAI_PRESET_CHANGED_AFTER']) if (event_types[name]) listen(event_types[name], () => {
-    if (generation && (generation.chat !== chatKey() || generation.preset !== presetKey())) {
-        if (isGenerating()) { stopGeneration(); notify('채팅 또는 프리셋이 바뀌어 진행 중인 생성을 중단했습니다.'); }
-        generation = null;
-    }
-    closeDialog(); worldCatalog = []; worldChat = ''; refreshToken++; search = '';
-    if (panel) panel.querySelector('.csb-search').value = '';
-    scheduleRefresh();
-});
-for (const name of ['WORLDINFO_SETTINGS_UPDATED', 'WORLDINFO_UPDATED', 'CHARACTER_EDITED', 'CHATCOMPLETION_SOURCE_CHANGED']) {
-    if (event_types[name]) listen(event_types[name], scheduleRefresh);
-}
-listen(event_types.APP_READY, init);
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true }); else init();
+    listen(event_types.APP_READY, init);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true }); else init();
 }
 export function onDisable() {
     // Do not change prompt behavior partway through an in-flight generation.
