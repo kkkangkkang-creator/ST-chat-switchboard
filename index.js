@@ -5,7 +5,7 @@ import { KEY, normalizeState, itemKey, installPromptAdapter, applyWorldOverrides
 
 const context = () => SillyTavern.getContext();
 const keyOf = item => itemKey(item.kind, item.source, item.id);
-let panel, body, status, subtitle, launcher, dialog;
+let panel, body, status, subtitle, launcher, dialog, quickDock;
 let tab = 'prompt', editing = false, search = '', worldCatalog = [], worldChat = '', refreshToken = 0;
 let wiredManager, restoreManager, adapterError = '', generation = null, saving = false;
 let worldReadError = '', refreshTimer, worldRead = null;
@@ -206,7 +206,47 @@ async function openPicker() {
     d.append(filter, list, footer); draw(); filter.focus();
 }
 
+function renderQuickDock() {
+    if (!active) return;
+    const anchor = document.getElementById('send_form');
+    if (!anchor?.parentNode) return;
+    if (!quickDock) {
+        quickDock = el('section', 'csb-quick');
+        quickDock.id = 'csb-quick';
+        quickDock.setAttribute('aria-label', '이 채팅의 빠른 스위치');
+    }
+    if (quickDock.parentNode !== anchor.parentNode) anchor.parentNode.insertBefore(quickDock, anchor);
+    quickDock.hidden = !chatKey();
+    quickDock.replaceChildren();
+    if (!chatKey()) return;
+    const head = el('div', 'csb-quick-head');
+    head.append(el('span', '', '이 채팅의 스위치'), button('＋ 추가', () => { setPanelOpen(true); openPicker(); }, 'csb-quick-manage'), button('⚙ 정리', () => setPanelOpen(true), 'csb-quick-manage'));
+    quickDock.append(head);
+    const items = readState().items.filter(x => x.kind === 'world' || x.source === presetKey());
+    if (!items.length) {
+        quickDock.append(el('p', 'csb-quick-empty', '항목을 추가하면 여기서 바로 켜고 끌 수 있어요.'));
+        return;
+    }
+    const buttons = el('div', 'csb-quick-buttons');
+    for (const item of items) {
+        const native = lookup(item), on = item.state ?? native?.enabled ?? false, key = keyOf(item);
+        const label = item.alias || native?.name || item.name;
+        const toggle = button('', () => changeState(s => {
+            const found = s.items.find(x => keyOf(x) === key);
+            if (found) found.state = !on;
+        }), `csb-quick-toggle${on ? ' is-on' : ''}`);
+        toggle.append(el('span', 'csb-quick-kind', item.kind === 'prompt' ? 'P' : 'W'), el('span', 'csb-quick-label', label), el('span', 'csb-quick-state', on ? 'ON' : 'OFF'));
+        toggle.setAttribute('role', 'switch');
+        toggle.setAttribute('aria-label', `${label} 빠른 켜기/끄기`);
+        toggle.setAttribute('aria-checked', String(on));
+        toggle.title = native ? `${item.kind === 'prompt' ? presetName(item.source) : item.source}${item.group ? ` · ${item.group}` : ''} · ${label}` : unavailableReason(item);
+        toggle.disabled = saving || isGenerating() || !native || (item.kind === 'prompt' ? Boolean(adapterError) : !hasWorldHook || Boolean(worldReadError));
+        buttons.append(toggle);
+    }
+    quickDock.append(buttons);
+}
 function render() {
+    renderQuickDock();
     if (!panel) return;
     const previousScroll = body.scrollTop;
     const c = context(), hasChat = Boolean(chatKey()), busy = isGenerating() || saving;
@@ -283,7 +323,7 @@ async function refreshWorlds() {
 function scheduleRefresh() {
     if (!active) return;
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(() => { if (!active) return; ensureAdapter(); render(); if (panel && !panel.hidden) refreshWorlds(); }, 100);
+    refreshTimer = setTimeout(() => { if (!active) return; ensureAdapter(); render(); if (chatKey()) refreshWorlds(); }, 100);
 }
 function setPanelOpen(open) {
     if (!panel) return;
@@ -332,6 +372,8 @@ function buildUI() {
 function init() {
     if (!active) return;
     ensureAdapter(); buildUI();
+    renderQuickDock();
+    if (chatKey()) refreshWorlds();
     const settings = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (settings && !document.getElementById('csb-settings')) {
         const wrap = el('div'); wrap.id = 'csb-settings';
@@ -381,7 +423,7 @@ export function onDisable() {
     clearTimeout(refreshTimer); refreshToken++;
     restoreManager?.(); restoreManager = null; wiredManager = undefined;
     generation = null; closeDialog();
-    panel?.remove(); launcher?.remove(); document.getElementById('csb-settings')?.remove();
+    panel?.remove(); launcher?.remove(); quickDock?.remove(); quickDock = null; document.getElementById('csb-settings')?.remove();
     panel = null; launcher = null; worldCatalog = []; worldChat = '';
 }
 onEnable();
