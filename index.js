@@ -12,6 +12,7 @@ let worldReadError = '', refreshTimer, worldRead = null;
 const hasWorldHook = Boolean(event_types.WORLDINFO_ENTRIES_LOADED);
 let active = false;
 const subscriptions = [];
+const activationLabels = { constant: '🔵 상시', normal: '🟢 키워드 트리거', vectorized: '🔗 벡터 검색' };
 function listen(name, handler) { eventSource.on(name, handler); subscriptions.push([name, handler]); }
 
 function chatKey() {
@@ -244,13 +245,29 @@ function render() {
             toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-checked', String(on)); toggle.setAttribute('aria-label', `${item.alias || item.name} 켜기/끄기`);
             toggle.disabled = busy || !native || Boolean(error);
             row.append(copy, toggle);
+            if (item.kind === 'world') {
+                const field = el('label', 'csb-activation', '주입 방식');
+                const select = el('select');
+                select.setAttribute('aria-label', `${item.alias || item.name} 주입 방식`);
+                for (const [value, label] of [['', `원본 따름 (${activationLabels[native?.activation] || '미연결'})`], ...Object.entries(activationLabels)]) {
+                    const option = el('option', '', label); option.value = value; select.append(option);
+                }
+                select.value = item.activation || '';
+                select.disabled = busy || !native || Boolean(error);
+                select.addEventListener('change', () => {
+                    const mode = select.value || null;
+                    changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) found.activation = mode; });
+                });
+                field.append(select); row.append(field);
+                if ((item.activation || native?.activation) === 'vectorized') row.append(el('small', 'csb-muted', '벡터 검색은 실리태번의 벡터 저장소에서 월드인포 검색을 활성화해야 합니다.'));
+            }
             if (editing) {
                 const actions = el('div', 'csb-row-actions');
                 const actionsList = [
                     ['이름·구획', () => editItem(item)],
                     ['↑', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index - 1; j >= 0; j--) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
                     ['↓', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index + 1; j < s.items.length; j++) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
-                    ['원본 따름', () => changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) found.state = null; })],
+                    ['원본 따름', () => changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) { found.state = null; found.activation = null; } })],
                     ['제거', () => changeState(s => { s.items = s.items.filter(x => keyOf(x) !== key); })],
                 ];
                 for (const [label, action] of actionsList) { const b = button(label, action, 'csb-quiet'); b.disabled = busy; actions.append(b); }
@@ -302,9 +319,27 @@ function setPanelOpen(open) {
         launcher.setAttribute('aria-expanded', 'false');
     }
 }
+function showFloatingIcon() {
+    if (!active || !launcher) return;
+    const viewport = globalThis.visualViewport;
+    const width = viewport?.width || globalThis.innerWidth || 390;
+    const height = viewport?.height || globalThis.innerHeight || 700;
+    const x = (viewport?.offsetLeft || 0) + Math.max(4, width - 62);
+    const y = (viewport?.offsetTop || 0) + Math.max(4, Math.min(height - 60, height * 0.6));
+    // Inline priorities protect the actual control from mobile theme rules.
+    for (const [name, value] of Object.entries({ display:'block', position:'fixed', left:`${x}px`, top:`${y}px`, right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', 'z-index':'2147483646', 'border-radius':'50%', background:'#b5a3fa', color:'#211a35', border:'1px solid #d2c6ff', 'font-size':'26px', 'line-height':'46px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'0 4px 18px #0007' })) {
+        launcher.style.setProperty(name, value, 'important');
+    }
+    // The icon itself (not only the panel) must escape clipping/stacking contexts.
+    if (typeof launcher.showPopover === 'function') {
+        launcher.setAttribute('popover', 'manual');
+        try { if (!launcher.matches(':popover-open')) launcher.showPopover(); } catch (error) { console.warn('[Switchboard] Floating icon fallback', error); }
+    }
+}
 function buildUI() {
     if (panel) return;
     launcher = button('◉', () => setPanelOpen(panel.hidden), 'csb-launcher', '채팅 스위치보드');
+    launcher.id = 'csb-floating-launcher';
     launcher.setAttribute('aria-label', '채팅 스위치보드 열기'); launcher.setAttribute('aria-expanded', 'false');
     panel = el('aside', 'csb-panel'); panel.hidden = true; panel.setAttribute('aria-label', '채팅 스위치보드');
     const header = el('header', 'csb-header'), titles = el('div');
@@ -326,17 +361,20 @@ function buildUI() {
     body = el('div', 'csb-body'); status = el('footer', 'csb-status'); status.setAttribute('role', 'status');
     panel.append(header, tabs, toolbar, source, input, body, status);
     document.body.append(launcher, panel);
+    showFloatingIcon();
     render();
 }
 
 function init() {
     if (!active) return;
     ensureAdapter(); buildUI();
+    showFloatingIcon();
     if (chatKey()) refreshWorlds();
     const settings = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (settings && !document.getElementById('csb-settings')) {
         const wrap = el('div'); wrap.id = 'csb-settings';
         wrap.append(button('◉ 채팅 스위치보드 열기', () => setPanelOpen(true), 'csb-settings-open'));
+        wrap.append(button('플로팅 아이콘 다시 표시 · v0.1.5', showFloatingIcon, 'csb-settings-open'));
         settings.append(wrap);
     }
 }
@@ -344,6 +382,9 @@ function init() {
 export function onEnable() {
 if (active) return;
 active = true;
+globalThis.addEventListener?.('resize', showFloatingIcon);
+globalThis.visualViewport?.addEventListener('resize', showFloatingIcon);
+globalThis.visualViewport?.addEventListener('scroll', showFloatingIcon);
 if (hasWorldHook) listen(event_types.WORLDINFO_ENTRIES_LOADED, payload => {
     if (!worldRead || (worldRead.chat === chatKey() && worldRead.token === refreshToken)) {
         worldCatalog = catalogWorlds(payload); worldChat = chatKey();
@@ -377,6 +418,9 @@ export function onDisable() {
     // Do not change prompt behavior partway through an in-flight generation.
     if (generation && isGenerating()) stopGeneration();
     active = false;
+    globalThis.removeEventListener?.('resize', showFloatingIcon);
+    globalThis.visualViewport?.removeEventListener('resize', showFloatingIcon);
+    globalThis.visualViewport?.removeEventListener('scroll', showFloatingIcon);
     for (const [name, handler] of subscriptions.splice(0)) eventSource.removeListener(name, handler);
     document.removeEventListener('DOMContentLoaded', init);
     clearTimeout(refreshTimer); refreshToken++;

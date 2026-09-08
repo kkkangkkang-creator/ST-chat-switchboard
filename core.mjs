@@ -15,6 +15,7 @@ export function normalizeState(value) {
         kind: item.kind, source: item.source, id: String(item.id),
         name: String(item.name || item.id), alias: String(item.alias || ''), group: String(item.group || ''),
         state: typeof item.state === 'boolean' ? item.state : null,
+        activation: item.kind === 'world' && ['constant', 'normal', 'vectorized'].includes(item.activation) ? item.activation : null,
     })) };
 }
 export function overrideFor(state, kind, source, id) {
@@ -67,7 +68,11 @@ export function applyWorldOverrides(payload, state) {
         // Clone entries so loadWorldInfo's cached source is never edited.
         const copies = entries.map(entry => {
             const on = overrideFor(state, 'world', entry.world, entry.uid);
-            return on === null ? entry : { ...entry, disable: !on };
+            const mode = state?.items?.find(x => x.kind === 'world' && x.source === entry.world && String(x.id) === String(entry.uid))?.activation;
+            const hasMode = ['constant', 'normal', 'vectorized'].includes(mode);
+            if (on === null && !hasMode) return entry;
+            return { ...entry, ...(on === null ? {} : { disable: !on }),
+                ...(hasMode ? { constant: mode === 'constant', vectorized: mode === 'vectorized' } : {}) };
         });
         entries.splice(0, entries.length, ...copies);
     }
@@ -84,6 +89,7 @@ export function catalogWorlds(payload) {
                 name: entry.comment || (Array.isArray(entry.key) ? entry.key.join(', ') : '') || `항목 ${entry.uid}`,
                 enabled: !entry.disable, content: String(entry.content || ''),
                 strategy: entry.constant ? '상시 조건' : entry.vectorized ? '벡터 조건' : '키워드 조건',
+                activation: entry.constant ? 'constant' : entry.vectorized ? 'vectorized' : 'normal',
             });
         }
     }

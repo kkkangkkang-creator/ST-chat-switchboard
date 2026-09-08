@@ -59,6 +59,9 @@ button.csb-launcher { display:block!important; position:fixed!important; width:4
 .csb-preview { white-space:pre-wrap; overflow-wrap:anywhere; max-height:60dvh; overflow:auto; padding:14px; background:#11151e; border-radius:10px; font-family:inherit; font-size:13px; }
 .csb-field { display:block; margin:18px 0; font-size:12px; color:var(--csb-muted); }
 .csb-field input { display:block; margin-top:7px; }
+.csb-activation { display:flex; align-items:center; gap:8px; width:100%; font-size:11px; color:var(--csb-muted); }
+.csb-activation select { flex:1; min-width:0; width:auto; padding:8px; border:1px solid var(--csb-line); border-radius:8px; background:#11151e; color:var(--csb-text); font-family:inherit; font-size:12px; }
+#csb-floating-launcher::backdrop { background:transparent; pointer-events:none; }
 @media(max-width:520px) { .csb-panel { right:8px; bottom:79px; width:calc(100vw - 16px); max-width:none; height:min(650px,calc(100dvh - 100px)); padding:16px; border-radius:18px; } .csb-launcher { right:12px; bottom:20px; } .csb-dialog { padding:17px; } }
 @media(max-width:520px) { .csb-panel[popover] { inset:auto 8px 79px auto; } }
 
