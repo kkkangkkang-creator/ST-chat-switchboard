@@ -95,3 +95,22 @@ export function catalogWorlds(payload) {
     }
     return [...entries.values()];
 }
+
+// Local non-null values override shared defaults; original source data stays intact.
+export function mergeStates(shared, local) {
+    const items = new Map(normalizeState(shared).items.map(x => [itemKey(x.kind, x.source, x.id), x]));
+    for (const item of normalizeState(local).items) {
+        const key = itemKey(item.kind, item.source, item.id), base = items.get(key);
+        items.set(key, { ...item, state: item.state ?? base?.state ?? null,
+            activation: item.activation ?? base?.activation ?? null });
+    }
+    return { version: 1, items: [...items.values()] };
+}
+export function resetToggles(state, kind) {
+    for (const item of state.items) if (item.kind === kind) item.state = null;
+}
+export function clearItems(state, kind) { state.items = state.items.filter(x => x.kind !== kind); }
+export function applyPromptCombination(state, combination, source) {
+    const items = normalizeState(combination).items.filter(x => x.kind === 'prompt' && x.source === source);
+    state.items = [...state.items.filter(x => x.kind !== 'prompt' || x.source !== source), ...items];
+}

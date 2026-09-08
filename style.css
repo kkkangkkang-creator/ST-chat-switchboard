@@ -72,3 +72,14 @@ button.csb-launcher { display:block!important; position:fixed!important; width:4
 .csb-panel select:focus-visible,.csb-dialog select:focus-visible { outline:2px solid var(--csb-accent); outline-offset:2px; }
 .csb-panel input::placeholder,.csb-dialog input::placeholder { color:#70786f; opacity:1; }
 .csb-launcher { touch-action:none; user-select:none; }
+
+/* Compact controls: name + mode + switch, with the source below the name. */
+.csb-scopes { display:flex; align-items:center; gap:4px; }
+.csb-scopes button { background:transparent; color:var(--csb-muted); padding:5px 10px; min-height:34px; }
+.csb-scopes button.is-active { background:#e6ece5; color:#344e3b; }
+.csb-panel select.csb-mode { appearance:none; -webkit-appearance:none; flex:0 0 40px; width:40px; height:42px; margin:0; padding:0; text-align:center; border:0; border-radius:8px; background:transparent; color:var(--csb-text); font-size:20px; cursor:pointer; box-shadow:none; }
+.csb-panel select.csb-mode:disabled { opacity:.4; }
+.csb-bulk { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.csb-combination { display:flex; align-items:center; gap:8px; padding:12px 0; border-bottom:1px solid var(--csb-line); }
+.csb-combination strong { flex:1; min-width:0; overflow-wrap:anywhere; font-size:13px; }
+.csb-panel button[hidden] { display:none!important; }
