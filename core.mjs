@@ -114,3 +114,28 @@ export function applyPromptCombination(state, combination, source) {
     const items = normalizeState(combination).items.filter(x => x.kind === 'prompt' && x.source === source);
     state.items = [...state.items.filter(x => x.kind !== 'prompt' || x.source !== source), ...items];
 }
+
+// Read section titles before filtering out non-toggleable marker prompts.
+export function catalogPrompts(manager, source) {
+    if (!source || !manager) return [];
+    let sectionTitle = '', sectionId = '';
+    const items = [];
+    for (const entry of manager.getPromptOrderForCharacter(manager.activeCharacter)) {
+        const prompt = manager.getPromptById(entry.identifier);
+        if (!prompt) continue;
+        const name = String(prompt.name || prompt.identifier);
+        const toggleable = typeof manager.isPromptToggleAllowed !== 'function' || manager.isPromptToggleAllowed(prompt);
+        if (!toggleable) {
+            // A locked functional marker is not necessarily a section heading.
+            const title = name.replace(/\uFE0F/g, '').trim();
+            if (prompt.marker && /^[🔹🔷💠💎◆◇♦][\s\S]*[🔹🔷💠💎◆◇♦]$/u.test(title)) {
+                sectionTitle = name; sectionId = String(prompt.identifier);
+            }
+            continue;
+        }
+        items.push({ kind: 'prompt', source, id: String(prompt.identifier), name,
+            enabled: Boolean(entry.enabled), content: String(prompt.content || ''), strategy: '',
+            sectionTitle, sectionId });
+    }
+    return items;
+}

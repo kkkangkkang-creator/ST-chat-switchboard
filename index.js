@@ -1,7 +1,7 @@
 import { eventSource, event_types, isGenerating, stopGeneration } from '../../../../script.js';
 import { promptManager } from '../../../openai.js';
 import { getSortedEntries } from '../../../world-info.js';
-import { KEY, mergeStates, resetToggles, clearItems, applyPromptCombination, normalizeState, itemKey, installPromptAdapter, applyWorldOverrides, catalogWorlds } from './core.mjs';
+import { KEY, catalogPrompts, mergeStates, resetToggles, clearItems, applyPromptCombination, normalizeState, itemKey, installPromptAdapter, applyWorldOverrides, catalogWorlds } from './core.mjs';
 import { POSITION_KEY, readPosition, positionPixels, attachFloatingDrag } from './floating.mjs';
 
 const context = () => SillyTavern.getContext();
@@ -82,19 +82,7 @@ function ensureAdapter() {
         adapterError = '';
     } catch (error) { adapterError = error.message; }
 }
-function promptCatalog() {
-    const source = presetKey();
-    if (!source || !wiredManager) return [];
-    const manager = wiredManager;
-    const order = manager.getPromptOrderForCharacter(manager.activeCharacter);
-    return order.flatMap(entry => {
-        const p = manager.getPromptById(entry.identifier);
-        // Match ST's own restrictions for structural markers.
-        if (!p || (typeof manager.isPromptToggleAllowed === 'function' && !manager.isPromptToggleAllowed(p))) return [];
-        return [{ kind: 'prompt', source, id: String(p.identifier), name: p.name || p.identifier,
-            enabled: Boolean(entry.enabled), content: String(p.content || ''), strategy: '' }];
-    });
-}
+function promptCatalog() { return catalogPrompts(wiredManager, presetKey()); }
 const indexItems = items => new Map(items.map(item => [keyOf(item), item]));
 function catalog() { return tab === 'prompt' ? promptCatalog() : worldCatalog; }
 function lookup(item) {
@@ -213,13 +201,16 @@ async function openPicker() {
     function draw() {
         list.replaceChildren();
         const q = filter.value.trim().toLocaleLowerCase();
-        const visible = choices.filter(x => `${x.name} ${x.source} ${x.content}`.toLocaleLowerCase().includes(q));
+        const visible = choices.filter(x => `${x.name} ${x.source} ${x.content} ${x.sectionTitle || ''}`.toLocaleLowerCase().includes(q));
         if (!visible.length) list.append(el('p', 'csb-empty', choices.length ? '검색 결과가 없습니다.' : '추가할 항목이 없습니다. 연결 상태를 확인해주세요.'));
         const groups = Map.groupBy ? Map.groupBy(visible, x => x.source) : visible.reduce((m, x) => { if (!m.has(x.source)) m.set(x.source, []); m.get(x.source).push(x); return m; }, new Map());
         for (const [book, rows] of groups) {
             const section = el('details', 'csb-book'); section.open = Boolean(q) || kind === 'prompt';
             section.append(el('summary', '', `${kind === 'prompt' ? presetName(book) : book} · ${rows.length}`));
+            let previousSection = '';
             for (const item of rows) {
+                if (item.sectionId && item.sectionId !== previousSection) section.append(el('h4', 'csb-preset-heading', item.sectionTitle));
+                previousSection = item.sectionId || '';
                 const row = el('label', 'csb-choice');
                 const checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = selected.has(keyOf(item));
                 checkbox.addEventListener('change', () => {
@@ -236,7 +227,7 @@ async function openPicker() {
     filter.addEventListener('input', draw);
     footer.append(button('검색 결과 모두 선택', () => {
         const q = filter.value.trim().toLocaleLowerCase();
-        choices.filter(x => `${x.name} ${x.source} ${x.content}`.toLocaleLowerCase().includes(q)).forEach(x => selected.add(keyOf(x)));
+        choices.filter(x => `${x.name} ${x.source} ${x.content} ${x.sectionTitle || ''}`.toLocaleLowerCase().includes(q)).forEach(x => selected.add(keyOf(x)));
         add.textContent = `${selected.size}개 추가`; add.disabled = !selected.size; draw();
     }, 'csb-quiet'), add);
     d.append(filter, list, footer); draw(); filter.focus();
@@ -333,8 +324,8 @@ function render() {
     const error = tab === 'prompt' ? adapterError : !hasWorldHook ? '이 SillyTavern 버전은 월드인포 제어를 지원하지 않습니다.' : worldReadError;
     if (error) body.append(el('p', 'csb-error', error));
     const query = search.toLocaleLowerCase();
-    const items = readState().items.filter(item => item.kind === tab && `${item.alias} ${item.name} ${item.group} ${item.source}`.toLocaleLowerCase().includes(query));
     const originals = indexItems(tab === 'prompt' ? promptCatalog() : worldChat === chatKey() ? worldCatalog : []);
+    const items = readState().items.filter(item => item.kind === tab && `${item.alias} ${item.name} ${item.group} ${item.source} ${originals.get(keyOf(item))?.sectionTitle || ''}`.toLocaleLowerCase().includes(query));
     const effectiveItems = editing ? null : indexItems((editScope === 'global' ? sharedState() : effectiveState()).items);
     if (editing) {
         const actions = el('div', 'csb-bulk');
@@ -353,8 +344,12 @@ function render() {
     for (const [group, members] of groups) {
         const section = el('section', 'csb-section');
         if (group) section.append(el('h4', '', group));
+        let previousSection = '';
         for (const [index, item] of members.entries()) {
             const key = keyOf(item), native = originals.get(key);
+            const sourceSection = native?.sectionId ? itemKey('prompt', item.source, native.sectionId) : '';
+            if (!group && sourceSection && sourceSection !== previousSection) section.append(el('h4', 'csb-preset-heading', native.sectionTitle));
+            previousSection = sourceSection;
             const row = el('div', `csb-row${native ? '' : ' is-missing'}${editing ? ' is-editing' : ''}`);
             const copy = button('', () => showDetails(item), 'csb-item-copy', `${item.alias || native?.name || item.name} · 내용 미리 보기`);
             copy.append(el('strong', '', item.alias || native?.name || item.name));
