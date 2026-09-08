@@ -285,15 +285,32 @@ function scheduleRefresh() {
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(() => { if (!active) return; ensureAdapter(); render(); if (panel && !panel.hidden) refreshWorlds(); }, 100);
 }
+function setPanelOpen(open) {
+    if (!panel) return;
+    if (open) {
+        panel.hidden = false;
+        // Escape theme stacking contexts and extension drawers on mobile.
+        if (typeof panel.showPopover === 'function') {
+            panel.setAttribute('popover', 'manual');
+            if (!panel.matches(':popover-open')) panel.showPopover();
+        }
+        launcher.setAttribute('aria-expanded', 'true');
+        ensureAdapter(); render(); refreshWorlds();
+    } else {
+        if (typeof panel.hidePopover === 'function' && panel.matches(':popover-open')) panel.hidePopover();
+        panel.hidden = true;
+        launcher.setAttribute('aria-expanded', 'false');
+    }
+}
 function buildUI() {
     if (panel) return;
-    launcher = button('◉', () => { panel.hidden = !panel.hidden; launcher.setAttribute('aria-expanded', String(!panel.hidden)); if (!panel.hidden) { ensureAdapter(); render(); refreshWorlds(); } }, 'csb-launcher', '채팅 스위치보드');
+    launcher = button('◉', () => setPanelOpen(panel.hidden), 'csb-launcher', '채팅 스위치보드');
     launcher.setAttribute('aria-label', '채팅 스위치보드 열기'); launcher.setAttribute('aria-expanded', 'false');
     panel = el('aside', 'csb-panel'); panel.hidden = true; panel.setAttribute('aria-label', '채팅 스위치보드');
     const header = el('header', 'csb-header'), titles = el('div');
     titles.append(el('span', 'csb-eyebrow', 'CHAT SWITCHBOARD'), el('h2', '', '채팅 스위치보드'));
     subtitle = el('p', 'csb-muted'); titles.append(subtitle);
-    header.append(titles, button('×', () => { panel.hidden = true; launcher.setAttribute('aria-expanded', 'false'); launcher.focus(); }, 'csb-close', '패널 닫기'));
+    header.append(titles, button('×', () => { setPanelOpen(false); launcher.focus(); }, 'csb-close', '패널 닫기'));
     const tabs = el('div', 'csb-tabs'); tabs.setAttribute('role', 'tablist');
     for (const [kind, label] of [['prompt', '프리셋'], ['world', '월드인포']]) {
         const b = button(label, () => { tab = kind; search = ''; input.value = ''; render(); if (kind === 'world') refreshWorlds(); });
@@ -318,7 +335,7 @@ function init() {
     const settings = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (settings && !document.getElementById('csb-settings')) {
         const wrap = el('div'); wrap.id = 'csb-settings';
-        wrap.append(button('◉ 채팅 스위치보드 열기', () => { panel.hidden = false; launcher.setAttribute('aria-expanded', 'true'); render(); refreshWorlds(); }, 'menu_button'));
+        wrap.append(button('◉ 채팅 스위치보드 열기', () => setPanelOpen(true), 'csb-settings-open'));
         settings.append(wrap);
     }
 }
