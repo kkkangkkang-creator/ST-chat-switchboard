@@ -175,6 +175,11 @@ function editItem(item) {
         closeDialog();
         await changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) Object.assign(found, { alias, group: section }); }, scope);
     }, 'csb-primary'));
+    d.append(button('원본 따름', async () => {
+        if (scope !== chatKey()) return closeDialog();
+        closeDialog();
+        await changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) { found.state = null; found.activation = null; } }, scope);
+    }, 'csb-quiet', 'ON/OFF와 주입 방식 지정을 해제'));
 }
 
 async function openPicker() {
@@ -332,8 +337,8 @@ function render() {
         if (group) section.append(el('h4', '', group));
         for (const item of members) {
             const native = lookup(item), key = keyOf(item);
-            const row = el('div', `csb-row${native ? '' : ' is-missing'}`);
-            const copy = button('', () => showDetails(item), 'csb-item-copy', '내용 미리 보기');
+            const row = el('div', `csb-row${native ? '' : ' is-missing'}${editing ? ' is-editing' : ''}`);
+            const copy = button('', () => showDetails(item), 'csb-item-copy', `${item.alias || native?.name || item.name} · 내용 미리 보기`);
             copy.append(el('strong', '', item.alias || native?.name || item.name));
             const source = item.kind === 'prompt' ? presetName(item.source) : item.source;
             copy.append(el('small', 'csb-muted', native ? source : `${source} · ${unavailableReason(item)}`));
@@ -363,13 +368,19 @@ function render() {
             if (editing) {
                 const actions = el('div', 'csb-row-actions');
                 const actionsList = [
-                    ['이름·구획', () => editItem(item)],
-                    ['↑', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index - 1; j >= 0; j--) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
-                    ['↓', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index + 1; j < s.items.length; j++) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
-                    ['원본 따름', () => changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) { found.state = null; found.activation = null; } })],
-                    ['제거', () => changeState(s => { s.items = s.items.filter(x => keyOf(x) !== key); })],
+                    ['edit', '이름·구획 변경', 'fa-feather', () => editItem(item)],
+                    ['up', '위로 이동', 'fa-arrow-up', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index - 1; j >= 0; j--) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
+                    ['down', '아래로 이동', 'fa-arrow-down', () => changeState(s => { const index = s.items.findIndex(x => keyOf(x) === key); for (let j = index + 1; j < s.items.length; j++) if (s.items[j].kind === item.kind && s.items[j].group === item.group) { [s.items[index], s.items[j]] = [s.items[j], s.items[index]]; break; } })],
+                    ['remove', '제거', 'fa-trash-can', () => changeState(s => { s.items = s.items.filter(x => keyOf(x) !== key); })],
                 ];
-                for (const [label, action] of actionsList) { const b = button(label, action, 'csb-quiet'); b.disabled = busy; actions.append(b); }
+                for (const [id, label, icon, action] of actionsList) {
+                    const b = button('', action, 'csb-action-icon', label);
+                    const glyph = el('i', `fa-solid ${icon}`); glyph.setAttribute('aria-hidden', 'true'); b.append(glyph);
+                    b.dataset.rowAction = id; b.setAttribute('aria-label', `${item.alias || item.name} · ${label}`);
+                    const index = members.indexOf(item);
+                    b.disabled = busy || (id === 'up' && index === 0 && !search) || (id === 'down' && index === members.length - 1 && !search);
+                    actions.append(b);
+                }
                 row.append(actions);
             }
             section.append(row);

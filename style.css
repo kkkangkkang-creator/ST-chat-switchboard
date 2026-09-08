@@ -27,14 +27,14 @@ button.csb-launcher { display:block!important; position:fixed!important; width:4
 .csb-body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; padding-right:2px; }
 .csb-section { display:flex; flex-direction:column; gap:0; margin-bottom:10px; }
 .csb-section h4 { font-size:12px; margin:5px 0 1px; color:var(--csb-accent); }
-.csb-row { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:6px 0; border:0; border-bottom:1px solid var(--csb-line); border-radius:0; background:transparent; }
+.csb-row { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:4px 0; border:0; border-bottom:1px solid var(--csb-line); border-radius:0; background:transparent; }
 .csb-panel button.csb-item-copy { background:none; padding:0; text-align:left; flex:1; min-width:0; border:0; }
 .csb-item-copy strong,.csb-copy strong { display:block; font-size:13px; font-weight:600; overflow-wrap:anywhere; }
 .csb-item-copy small,.csb-copy small { display:block; margin-top:2px; font-size:11px; overflow-wrap:anywhere; }
 .csb-panel .csb-switch { background:#f1f2ee; color:#656e64; border:1px solid #d7dcd4; border-radius:18px; min-width:46px; padding:5px 7px; font-size:11px; font-weight:700; }
 .csb-panel .csb-switch.is-on { background:#526b5b; color:#ffffff; border-color:#526b5b; }
-.csb-row-actions { width:100%; display:flex; gap:5px; flex-wrap:wrap; padding-top:8px; border-top:1px solid var(--csb-line); }
-.csb-row-actions button { font-size:10px; padding:6px 7px; }
+.csb-row-actions { display:flex; flex:0 0 auto; align-items:center; gap:2px; }
+
 .csb-row.is-missing { border-style:dashed; }
 .csb-row.is-missing .csb-item-copy { opacity:.65; }
 .csb-empty { text-align:center; color:var(--csb-muted); padding:22px 8px; font-size:12px; }
@@ -92,3 +92,12 @@ button.csb-launcher { display:block!important; position:fixed!important; width:4
 #csb-settings { width:100%; min-width:0; }
 #csb-settings .csb-settings-actions { gap:6px; padding:6px 0; }
 #csb-settings .csb-settings-actions > button { width:auto; min-width:0; height:auto; white-space:normal; word-break:keep-all; writing-mode:horizontal-tb; font-family:inherit; }
+
+/* Editing is one compact line: title, feather, up, down, trash. */
+.csb-row.is-editing { flex-wrap:nowrap; gap:6px; }
+.csb-row.is-editing .csb-mode,.csb-row.is-editing .csb-switch,.csb-row.is-editing .csb-item-copy small { display:none; }
+.csb-panel .csb-row-actions .csb-action-icon { display:flex; align-items:center; justify-content:center; flex:0 0 30px; width:30px; min-width:30px; height:30px; min-height:30px; margin:0; padding:0; border:0; border-radius:5px; background:transparent; color:var(--csb-muted); font-size:13px; }
+.csb-action-icon i { pointer-events:none; }
+.csb-panel .csb-item-copy strong,.csb-panel .csb-item-copy small { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.csb-panel .csb-row-actions .csb-action-icon:hover:not(:disabled) { background:var(--csb-card); }
+.csb-panel .csb-row-actions [data-row-action=remove]:hover:not(:disabled) { color:#a74750; }
