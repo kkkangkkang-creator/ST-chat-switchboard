@@ -422,7 +422,7 @@ function showFloatingIcon() {
     if (!active || !launcher) return;
     const { x, y } = positionPixels(previewPosition || savedPosition, floatingViewport());
     // Inline priorities protect the actual control from mobile theme rules.
-    for (const [name, value] of Object.entries({ display:'block', position:'fixed', left:`${x}px`, top:`${y}px`, right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', 'z-index':'2147483646', 'border-radius':'16px', background:'#faf9f6', color:'#37433b', border:'1px solid #d7dad4', 'font-size':'27px', 'line-height':'44px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'0 3px 12px #22222218', 'touch-action':'none', 'user-select':'none', cursor:'grab' })) {
+    for (const [name, value] of Object.entries({ display:'block', position:'fixed', left:`${x}px`, top:`${y}px`, right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', 'z-index':'2147483646', 'border-radius':'0', background:'transparent', color:'#37433b', border:'0', 'font-size':'27px', 'line-height':'44px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'none', 'touch-action':'none', 'user-select':'none', cursor:'grab' })) {
         launcher.style.setProperty(name, value, 'important');
     }
     // The icon itself (not only the panel) must escape clipping/stacking contexts.
@@ -433,7 +433,15 @@ function showFloatingIcon() {
 }
 function buildUI() {
     if (panel) return;
-    launcher = button('≡', () => setPanelOpen(panel.hidden), 'csb-launcher', '눌러서 열기 · 끌어서 이동');
+    launcher = button('', () => setPanelOpen(panel.hidden), 'csb-launcher', '눌러서 열기 · 끌어서 이동');
+    const art = el('img', 'csb-launcher-art');
+    art.src = new URL('./assets/strawberry-cake.png', import.meta.url).href;
+    art.alt = ''; art.draggable = false; art.setAttribute('aria-hidden', 'true');
+    // 48px touch target; transparent margins leave a roughly 36px visible cake.
+    for (const [name, value] of Object.entries({ display:'block', width:'48px', height:'48px', 'max-width':'none', margin:'0', padding:'0', border:'0', background:'transparent', 'object-fit':'contain', 'image-rendering':'pixelated', 'pointer-events':'none', 'user-select':'none' })) art.style.setProperty(name, value, 'important');
+    const control = launcher;
+    art.addEventListener('error', () => { art.remove(); control.textContent = '🍰'; });
+    launcher.append(art);
     detachDrag = attachFloatingDrag(launcher, {
         getPosition: () => savedPosition, getViewport: floatingViewport,
         preview: p => { previewPosition = p; showFloatingIcon(); },
@@ -481,7 +489,7 @@ function init() {
     if (settings && !document.getElementById('csb-settings')) {
         const wrap = el('div'); wrap.id = 'csb-settings';
         wrap.append(button('◉ 채팅 스위치보드 열기', () => setPanelOpen(true), 'csb-settings-open'));
-        wrap.append(button('아이콘 위치 초기화 · v0.2.0', resetFloatingPosition, 'csb-settings-open'));
+        wrap.append(button('아이콘 위치 초기화 · v0.2.1', resetFloatingPosition, 'csb-settings-open'));
         settings.append(wrap);
     }
 }
