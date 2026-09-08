@@ -488,9 +488,23 @@ function init() {
     const settings = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
     if (settings && !document.getElementById('csb-settings')) {
         const wrap = el('div'); wrap.id = 'csb-settings';
-        wrap.append(button('◉ 채팅 스위치보드 열기', () => setPanelOpen(true), 'csb-settings-open'));
-        wrap.append(button('아이콘 위치 초기화 · v0.2.1', resetFloatingPosition, 'csb-settings-open'));
-        settings.append(wrap);
+        // Use SillyTavern's native drawer and delegated toggle handler so themes match.
+        const drawer = el('div', 'inline-drawer');
+        const header = el('div', 'inline-drawer-toggle inline-drawer-header');
+        header.setAttribute('role', 'button'); header.tabIndex = 0;
+        header.setAttribute('aria-label', '채팅 스위치보드 설정 펼치기/접기');
+        header.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); header.click(); }
+        });
+        const chevron = el('div', 'inline-drawer-icon fa-solid fa-circle-chevron-down down');
+        chevron.setAttribute('aria-hidden', 'true');
+        header.append(el('b', '', '채팅 스위치보드'), chevron);
+        const content = el('div', 'inline-drawer-content');
+        const actions = el('div', 'flex-container csb-settings-actions');
+        actions.append(button('패널 열기', () => setPanelOpen(true), 'menu_button csb-settings-open'));
+        actions.append(button('아이콘 위치 초기화', resetFloatingPosition, 'menu_button csb-settings-reset'));
+        content.append(actions);
+        drawer.append(header, content); wrap.append(drawer); settings.append(wrap);
     }
 }
 

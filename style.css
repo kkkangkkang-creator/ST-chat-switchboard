@@ -1,8 +1,6 @@
 .csb-panel,.csb-dialog { --csb-bg:#faf9f6; --csb-card:#f0f2ed; --csb-line:#e1e4dd; --csb-text:#2d342f; --csb-muted:#70786f; --csb-accent:#526b5b; color:var(--csb-text); background:var(--csb-bg); font-family:inherit; font-size:13px; line-height:1.4; text-align:left; box-sizing:border-box; color-scheme:light; }
 .csb-panel *, .csb-dialog * { box-sizing:border-box; }
 .csb-panel[hidden] { display:none!important; }
-#csb-settings { display:block!important; width:100%!important; min-width:0; flex:0 0 100%; box-sizing:border-box; }
-#csb-settings > button.csb-settings-open { display:flex!important; align-items:center; justify-content:center; width:100%!important; max-width:none!important; min-width:0!important; height:auto!important; min-height:44px; padding:12px 16px!important; margin:8px 0!important; box-sizing:border-box; white-space:normal!important; word-break:keep-all!important; overflow-wrap:normal!important; writing-mode:horizontal-tb!important; font-family:inherit; font-size:14px!important; line-height:1.5!important; color:#2d342f!important; background:#e6ece5!important; border:1px solid #d7dad4!important; border-radius:12px!important; cursor:pointer; }
 .csb-panel[popover] { inset:auto 20px 85px auto; margin:0; overflow:visible; }
 .csb-panel { z-index:2147483000!important; }
 button.csb-launcher { display:block!important; position:fixed!important; width:48px!important; min-width:48px!important; max-width:48px!important; height:48px!important; padding:0!important; margin:0!important; line-height:48px!important; text-align:center!important; writing-mode:horizontal-tb!important; z-index:2147482999!important; }
@@ -89,3 +87,8 @@ button.csb-launcher { display:block!important; position:fixed!important; width:4
 .csb-launcher:focus-visible { outline:2px solid #c75279!important; outline-offset:2px; }
 .csb-panel .csb-close { min-width:32px; min-height:32px; }
 @media(max-height:450px) { .csb-panel,.csb-panel[popover] { top:8px; bottom:8px; height:calc(100dvh - 16px); overflow-y:auto; } .csb-body { flex:1 0 90px; } }
+
+/* Extension settings inherit the host theme, including drawer headers and icons. */
+#csb-settings { width:100%; min-width:0; }
+#csb-settings .csb-settings-actions { gap:6px; padding:6px 0; }
+#csb-settings .csb-settings-actions > button { width:auto; min-width:0; height:auto; white-space:normal; word-break:keep-all; writing-mode:horizontal-tb; font-family:inherit; }
