@@ -115,27 +115,32 @@ export function applyPromptCombination(state, combination, source) {
     state.items = [...state.items.filter(x => x.kind !== 'prompt' || x.source !== source), ...items];
 }
 
-// Read section titles before filtering out non-toggleable marker prompts.
+// Built-in prompts can be filled by ST even when their stored content is empty.
+const builtInPrompts = new Set(['main', 'nsfw', 'jailbreak', 'enhanceDefinitions',
+    'dialogueExamples', 'chatHistory', 'worldInfoBefore', 'worldInfoAfter',
+    'charDescription', 'charPersonality', 'scenario', 'personaDescription']);
+
 export function catalogPrompts(manager, source) {
     if (!source || !manager) return [];
-    let sectionTitle = '', sectionId = '';
+    let sections = [], afterItem = false;
     const items = [];
     for (const entry of manager.getPromptOrderForCharacter(manager.activeCharacter)) {
         const prompt = manager.getPromptById(entry.identifier);
         if (!prompt) continue;
-        const name = String(prompt.name || prompt.identifier);
+        const id = String(prompt.identifier), name = String(prompt.name || id), content = String(prompt.content || '');
         const toggleable = typeof manager.isPromptToggleAllowed !== 'function' || manager.isPromptToggleAllowed(prompt);
-        if (!toggleable) {
-            // A locked functional marker is not necessarily a section heading.
-            const title = name.replace(/\uFE0F/g, '').trim();
-            if (prompt.marker && /^[🔹🔷💠💎◆◇♦][\s\S]*[🔹🔷💠💎◆◇♦]$/u.test(title)) {
-                sectionTitle = name; sectionId = String(prompt.identifier);
-            }
+        const heading = !builtInPrompts.has(id) && Boolean(String(prompt.name || '').trim()) &&
+            ((prompt.marker && !toggleable) || (!prompt.marker && !prompt.system_prompt && !content.trim()));
+        if (heading) {
+            if (afterItem) sections = [];
+            sections = [...sections, { id, title: name }]; afterItem = false;
+            items.push({ kind: 'prompt', source, id, name, content, heading: true });
             continue;
         }
-        items.push({ kind: 'prompt', source, id: String(prompt.identifier), name,
-            enabled: Boolean(entry.enabled), content: String(prompt.content || ''), strategy: '',
-            sectionTitle, sectionId });
+        if (!toggleable) continue;
+        items.push({ kind: 'prompt', source, id, name, content, enabled: Boolean(entry.enabled), strategy: '',
+            sections, sectionTitle: sections.map(x => x.title).join(' · '), sectionId: sections.at(-1)?.id || '' });
+        afterItem = true;
     }
     return items;
 }

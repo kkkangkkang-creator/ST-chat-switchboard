@@ -33,12 +33,35 @@ const prompts = [
 ];
 const manager={activeCharacter:{},getPromptOrderForCharacter:()=>prompts.map(p=>({identifier:p.identifier,enabled:true})),
  getPromptById:id=>prompts.find(p=>p.identifier===id),isPromptToggleAllowed:p=>!p.marker||p.identifier==='worldInfoBefore'};
-const original=JSON.stringify(prompts),catalog=catalogPrompts(manager,'P');
+const original=JSON.stringify(prompts),catalog=catalogPrompts(manager,'P').filter(x=>!x.heading);
 assert.equal(catalog.length,4);
-assert.equal(catalog[0].sectionTitle,'🔹🔹 CORE 🔹🔹');
+assert.deepEqual(catalog[0].sections.map(x=>x.title),['🔹🔹 CORE 🔹🔹','! Macro Cleaner !']);
 assert.equal(catalog[1].sectionId,'cards','toggleable native marker remains an ordinary item');
 assert.equal(catalog[2].sectionId,'cards','diamond text alone does not make a toggleable prompt a heading');
 assert.equal(catalog[3].sectionId,'same-title','same title with a different ID starts a new section');
 assert.equal(JSON.stringify(prompts),original);
 assert.equal(catalogPrompts(manager,'Q')[0].source,'Q');
 console.log('PASS: heading inheritance, locked functional markers, toggleable markers, duplicate headings, source preservation');
+
+const varied=[
+ {identifier:'format',name:'FORMATTING',marker:true},
+ {identifier:'triangle',name:'🔻1ST ON: ASTERISKS🔻',marker:true},
+ {identifier:'real',name:'Without Asterisks',content:'No asterisks'},
+ {identifier:'line',name:'────────────',marker:true},
+ {identifier:'plain',name:'시점 설정',content:'  \n  '},
+ {identifier:'pov',name:'3rd Person',content:'Third person'},
+ {identifier:'worldInfoBefore',name:'World Info',marker:true},
+ {identifier:'chatHistory',name:'Chat History',marker:true},
+ {identifier:'nsfw',name:'Auxiliary',content:''},
+ {identifier:'customSystem',name:'Empty system',system_prompt:true,content:''},
+ {identifier:'macro',name:'A macro',content:'{{getvar::test}}'},
+ {identifier:'decorated',name:'🔻Important🔻',content:'Actual instruction'},
+];
+const variantManager={...manager,getPromptOrderForCharacter:()=>varied.map(p=>({identifier:p.identifier,enabled:true})),getPromptById:id=>varied.find(p=>p.identifier===id),isPromptToggleAllowed:p=>!p.marker||['worldInfoBefore','chatHistory'].includes(p.identifier)};
+const variant=catalogPrompts(variantManager,'P');
+assert.deepEqual(variant.filter(x=>x.heading).map(x=>x.id),['format','triangle','line','plain']);
+assert.deepEqual(variant.find(x=>x.id==='real').sections.map(x=>x.id),['format','triangle']);
+assert.deepEqual(variant.find(x=>x.id==='pov').sections.map(x=>x.id),['line','plain']);
+assert.ok(variant.filter(x=>!x.heading).some(x=>x.id==='chatHistory'));
+assert.ok(variant.filter(x=>!x.heading).some(x=>x.id==='customSystem'));
+console.log('PASS: arbitrary headings, consecutive labels, line separators, blank custom titles, protected built-ins and content prompts');

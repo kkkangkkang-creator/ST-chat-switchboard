@@ -82,7 +82,10 @@ function ensureAdapter() {
         adapterError = '';
     } catch (error) { adapterError = error.message; }
 }
-function promptCatalog() { return catalogPrompts(wiredManager, presetKey()); }
+function promptCatalog(includeHeadings = false) {
+    const rows = catalogPrompts(wiredManager, presetKey());
+    return includeHeadings ? rows : rows.filter(row => !row.heading);
+}
 const indexItems = items => new Map(items.map(item => [keyOf(item), item]));
 function catalog() { return tab === 'prompt' ? promptCatalog() : worldCatalog; }
 function lookup(item) {
@@ -172,6 +175,13 @@ function editItem(item) {
     }, 'csb-quiet', 'ON/OFF와 주입 방식 지정을 해제'));
 }
 
+function appendPresetHeadings(container, item, previous) {
+    const sections = item?.sections || [];
+    const key = JSON.stringify([item?.source, sections.map(x => x.id)]);
+    if (key !== previous) for (const heading of sections) container.append(el('h4', 'csb-preset-heading', heading.title));
+    return key;
+}
+
 async function openPicker() {
     if (!chatKey() || isGenerating() || saving) return;
     const scope = chatKey(), source = presetKey(), kind = tab, target = editScope;
@@ -209,8 +219,7 @@ async function openPicker() {
             section.append(el('summary', '', `${kind === 'prompt' ? presetName(book) : book} · ${rows.length}`));
             let previousSection = '';
             for (const item of rows) {
-                if (item.sectionId && item.sectionId !== previousSection) section.append(el('h4', 'csb-preset-heading', item.sectionTitle));
-                previousSection = item.sectionId || '';
+                previousSection = appendPresetHeadings(section, item, previousSection);
                 const row = el('label', 'csb-choice');
                 const checkbox = el('input'); checkbox.type = 'checkbox'; checkbox.checked = selected.has(keyOf(item));
                 checkbox.addEventListener('change', () => {
@@ -324,8 +333,8 @@ function render() {
     const error = tab === 'prompt' ? adapterError : !hasWorldHook ? '이 SillyTavern 버전은 월드인포 제어를 지원하지 않습니다.' : worldReadError;
     if (error) body.append(el('p', 'csb-error', error));
     const query = search.toLocaleLowerCase();
-    const originals = indexItems(tab === 'prompt' ? promptCatalog() : worldChat === chatKey() ? worldCatalog : []);
-    const items = readState().items.filter(item => item.kind === tab && `${item.alias} ${item.name} ${item.group} ${item.source} ${originals.get(keyOf(item))?.sectionTitle || ''}`.toLocaleLowerCase().includes(query));
+    const originals = indexItems(tab === 'prompt' ? promptCatalog(true) : worldChat === chatKey() ? worldCatalog : []);
+    const items = readState().items.filter(item => item.kind === tab && !originals.get(keyOf(item))?.heading && `${item.alias} ${item.name} ${item.group} ${item.source} ${originals.get(keyOf(item))?.sectionTitle || ''}`.toLocaleLowerCase().includes(query));
     const effectiveItems = editing ? null : indexItems((editScope === 'global' ? sharedState() : effectiveState()).items);
     if (editing) {
         const actions = el('div', 'csb-bulk');
@@ -347,9 +356,7 @@ function render() {
         let previousSection = '';
         for (const [index, item] of members.entries()) {
             const key = keyOf(item), native = originals.get(key);
-            const sourceSection = native?.sectionId ? itemKey('prompt', item.source, native.sectionId) : '';
-            if (!group && sourceSection && sourceSection !== previousSection) section.append(el('h4', 'csb-preset-heading', native.sectionTitle));
-            previousSection = sourceSection;
+            if (!group) previousSection = appendPresetHeadings(section, native, previousSection);
             const row = el('div', `csb-row${native ? '' : ' is-missing'}${editing ? ' is-editing' : ''}`);
             const copy = button('', () => showDetails(item), 'csb-item-copy', `${item.alias || native?.name || item.name} · 내용 미리 보기`);
             copy.append(el('strong', '', item.alias || native?.name || item.name));

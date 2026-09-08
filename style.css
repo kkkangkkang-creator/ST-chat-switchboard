@@ -90,3 +90,5 @@
 
 .csb-dialog .csb-preset-heading,.csb-section .csb-preset-heading { margin:0; padding:7px 10px; font-size:12px; line-height:1.4; font-weight:600; color:var(--csb-text); background:var(--csb-card); border-bottom:1px solid var(--csb-line); overflow-wrap:anywhere; }
 .csb-section .csb-preset-heading { margin-top:7px; padding:5px 6px; border-radius:4px; }
+
+.csb-preset-heading { white-space:pre-line; }
