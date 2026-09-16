@@ -553,7 +553,28 @@ function buildUI() {
     if (panel) return;
     launcher = button('', () => setPanelOpen(panel.hidden), 'csb-launcher', '눌러서 열기 · 끌어서 이동');
     // Inline priorities protect the actual control from mobile theme rules.
-    for (const [name, value] of Object.entries({ display:'block', position:'fixed', right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-hei…550 tokens truncated…ader', 'csb-header'), titles = el('div');
+    for (const [name, value] of Object.entries({ display:'block', position:'fixed', right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', overflow:'visible', 'z-index':'2147483646', 'border-radius':'0', background:'transparent', color:'#37433b', border:'0', 'font-size':'27px', 'line-height':'44px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'none', 'touch-action':'none', 'user-select':'none', cursor:'grab' })) {
+        launcher.style.setProperty(name, value, 'important');
+    }
+    const art = el('img', 'csb-launcher-art');
+    art.src = new URL('./assets/strawberry-cake.png', import.meta.url).href;
+    art.alt = ''; art.draggable = false; art.setAttribute('aria-hidden', 'true');
+    // 48px touch target; transparent margins leave a roughly 36px visible cake.
+    for (const [name, value] of Object.entries({ display:'block', width:'48px', height:'48px', 'max-width':'none', margin:'0', padding:'0', border:'0', background:'transparent', 'object-fit':'contain', 'image-rendering':'pixelated', 'pointer-events':'none', 'user-select':'none' })) art.style.setProperty(name, value, 'important');
+    const control = launcher;
+    art.addEventListener('error', () => { art.remove(); control.prepend(el('span', '', '🍰')); });
+    badge = el('span', 'csb-badge'); badge.hidden = true; badge.setAttribute('aria-hidden', 'true');
+    launcher.append(art, badge);
+    detachDrag = attachFloatingDrag(launcher, {
+        getPosition: () => savedPosition, getViewport: floatingViewport,
+        preview: p => { previewPosition = p; showFloatingIcon(); },
+        commit: p => { savedPosition = p; previewPosition = null; try { globalThis.localStorage?.setItem(POSITION_KEY, JSON.stringify(p)); } catch {} showFloatingIcon(); },
+        restore: () => { previewPosition = null; showFloatingIcon(); },
+    });
+    launcher.id = 'csb-floating-launcher';
+    launcher.setAttribute('aria-label', '채팅 스위치보드 열기'); launcher.setAttribute('aria-expanded', 'false');
+    panel = el('aside', 'csb-panel'); panel.hidden = true; panel.setAttribute('aria-label', '채팅 스위치보드');
+    const header = el('header', 'csb-header'), titles = el('div');
     titles.append(el('h2', '', '채팅 스위치'));
     subtitle = el('p', 'csb-muted'); titles.append(subtitle);
     header.append(titles, button('×', () => { setPanelOpen(false); launcher.focus(); }, 'csb-close', '패널 닫기'));
