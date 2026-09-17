@@ -1,104 +1,110 @@
-# 채팅 스위치보드 0.2.6
+# 채팅 스위치보드 / Chat Switchboard 0.3.2
 
-현재 프리셋의 프롬프트와 연결된 월드인포 항목을 골라 켜고 끄는 SillyTavern 확장입니다.
-채팅별 설정과 모든 채팅의 공통 설정을 지원하며, 원본 프리셋·월드인포 파일은 수정하지 않습니다.
-Tavern Helper / JS-Slash-Runner나 별도 빌드는 필요하지 않습니다.
+SillyTavern의 프리셋 프롬프트와 월드인포 엔트리를 작은 패널에서 제어합니다.
+케이크 아이콘을 눌러 열고, 끌어서 위치를 옮길 수 있습니다. 별도 빌드나 Tavern Helper는 필요하지 않습니다.
 
-## 설치와 업데이트
+## 설치·업데이트
 
-1. SillyTavern의 **확장 프로그램 → 확장 설치**에 아래 주소를 입력합니다.
-
-   https://github.com/kkkangkkang-creator/ST-chat-switchboard
-
-2. 새로고침하고 채팅을 연 뒤 **딸기 케이크** 아이콘을 누릅니다.
-3. 업데이트는 확장 관리 화면에서 실행한 뒤 새로고침합니다.
-
-확장 설정의 **채팅 스위치보드** 제목을 펼치면 **패널 열기 / 아이콘 위치 초기화**가 나옵니다.
-케이크는 끌어서 이동할 수 있고, 위치는 기기·브라우저별로 기억합니다.
-
-수동 설치 위치는 `SillyTavern/public/scripts/extensions/third-party/ST-chat-switchboard/`입니다.
-폴더 바로 아래에 `manifest.json`이 있어야 합니다. 이전 ZIP 설치본과 중복 실행하지 마세요.
-
-## 사용
-
-1. **이 채팅 / 모든 채팅**에서 편집할 범위를 고릅니다.
-2. **프리셋 / 월드인포 → 항목 추가**에서 원하는 항목을 선택합니다.
-3. ON/OFF와 월드인포의 주입 방식 아이콘을 바꿉니다. 다음 답변 생성부터 적용됩니다.
-4. 이름을 누르면 전체 제목과 원본 내용을 미리 볼 수 있습니다.
-5. **정리**에서는 깃펜으로 이름·구획을 수정하고, 화살표로 순서를 바꾸거나 휴지통으로 제거합니다.
-
-추가한 항목의 ON/OFF는 원본의 현재 값으로 시작합니다. 선택 목록은 편집 범위별로 따로 관리합니다.
-**모든 채팅**이 공통 기본값이며, 같은 항목에 **이 채팅**의 지정이 있으면 그 값이 우선합니다.
-범위 버튼을 바꾸는 것만으로 공통 설정이 꺼지지는 않습니다.
-
-| 동작 | 결과 |
-| --- | --- |
-| ON/OFF | 선택한 범위에 상태 지정 |
-| 깃펜 → 원본 따름 | 목록은 유지하고 ON/OFF·주입 방식 지정 해제 |
-| 정리 → ON/OFF 초기화 | 현재 범위·탭의 ON/OFF 지정만 해제; 목록과 주입 방식은 유지 |
-| 정리 → 선택 항목 비우기 | 현재 범위·탭의 목록과 지정 제거; 검색으로 숨긴 항목도 포함 |
-| 휴지통 | 해당 항목을 현재 범위에서 제거 |
-| 새 채팅 | 공통 설정이 있으면 적용하고, 나머지는 원본을 따름 |
-| 프리셋 변경 / 월드인포 연결 해제 | 기존 버튼은 보관하되 해당 원본이 없으면 조작·적용하지 않음 |
-
-채팅별 지정을 해제하면 공통 값 또는 원본을 따릅니다. 공통 지정을 해제하면 원본을 따릅니다.
-선택 목록을 비워도 원본 파일이나 저장한 조합은 삭제하지 않습니다.
-
-## 월드인포와 프롬프트 조합
-
-- **🔵 상시 / 🟢 키워드 / 🔗 벡터**: 아이콘을 눌러 주입 방식을 고릅니다.
-  벡터 방식은 실리태번 벡터 저장소의 월드인포 검색 설정이 필요합니다.
-  ON이어도 확률·예산 등의 조건이 적용되며, 이번 답변에 실제 주입됐다는 뜻은 아닙니다.
-  주입 방식 변경으로 OFF인 항목이 자동으로 켜지지는 않습니다.
-- **조합**: 현재 프리셋의 선택 목록과 ON/OFF를 이름 붙여 저장하고 다른 채팅에서 불러옵니다.
-  불러오면 선택한 범위에서 해당 프리셋의 목록과 ON/OFF가 교체됩니다.
-  다른 프리셋의 항목과 월드인포 설정은 유지됩니다.
-
-## 적용과 저장
-
-- 프리셋은 **Chat Completion** 프롬프트를 대상으로 합니다. Text Completion 템플릿은 지원하지 않습니다.
-- 월드인포는 현재 연결된 책의 **개별 항목**을 제어합니다. 책 연결/해제는 실리태번 기본 UI에서 합니다.
-- 공통 설정도 같은 프리셋을 사용하거나 해당 책이 연결된 채팅에서만 적용됩니다.
-- 생성 중에는 설정 변경을 막고 생성 시작 시점의 상태를 유지합니다.
-- 기본 편집기는 원본 상태를, 이 패널은 선택한 범위의 상태를 표시하므로 서로 다를 수 있습니다.
-- 프리셋/책 이름이나 항목 ID가 바뀌면 다시 추가해야 할 수 있습니다.
-
-채팅별 설정은 채팅 메타데이터의 `chat_switchboard_v1`에, 공통 설정과 조합은 같은 키의
-실리태번 확장 설정에 저장합니다. 본문 전체를 설정에 복제하지 않습니다.
-채팅을 분기·복제하면서 메타데이터가 복사되면 채팅별 설정도 함께 복사될 수 있습니다.
-
-프롬프트는 읽기 메서드에 상태를 반영하며 원본 순서와 enabled 값을 보존합니다.
-월드인포는 `WORLDINFO_ENTRIES_LOADED`에서 항목 사본에 상태를 반영합니다.
-확장을 비활성화하면 적용이 중단되며, 저장된 설정은 재설치를 위해 남습니다.
-
-## 최근 변경과 검증
-
-- **0.2.6**: 구분 제목 판정을 특정 기호에서 항목 구조 기준으로 바꿨습니다.
-  켜고 끌 수 없는 사용자 마커와 제목만 있는 빈 사용자 프롬프트를 구분 제목으로 표시합니다.
-  빨간 삼각형·일반 텍스트·선 모양을 그대로 표시하며, 연속된 제목도 모두 보여줍니다.
-  실리태번 기본 항목과 시스템 프롬프트, 실제 본문이 있는 일반 프롬프트는 빈 구분 제목으로 판정하지 않습니다.
-  제목만 있는 빈 사용자 프롬프트는 구분용으로 간주하므로 선택 목록에서는 스위치 대신 제목으로 표시됩니다.
+DEMO를 사용 중이라면 비활성화하고 기존 배포 확장을 업데이트·활성화한 뒤 새로고침하세요.
+데모에서 만든 설정은 별도로 보관되며 자동으로 가져오지 않습니다.
 
 
-- **0.2.5**: 켜고 끌 수 없는 마커 중 다이아몬드로 감싼 제목을 구분 제목으로 표시합니다.
-  항목 추가 창과 선택한 목록에서 아래 항목의 원래 구획을 보여주며 제목으로 검색할 수도 있습니다.
-  제목에는 체크박스나 ON/OFF가 없고, 추가 개수와 생성 설정에도 포함하지 않습니다.
-  이미 선택한 항목에도 적용하며, 직접 지정한 구획 이름이 있으면 그 이름을 우선합니다.
+확장 프로그램 → 확장 설치에 아래 주소를 입력합니다.
 
-- **0.2.4**: 사용하지 않는 CSS·장식과 중복 처리를 정리했습니다. 목록의 반복 계산을 줄이고,
-  월드인포 읽기 요청이 겹친 상태에서 실패해도 오류 처리와 재시도가 가능하도록 보완했습니다.
-- **0.2.3**: 한 줄 정리 모드와 깃펜·이동·휴지통 아이콘.
-- **0.2.2**: 테마를 따르는 기본 확장 설정 접기·펼치기 UI.
-- **0.2.1**: 도트 케이크 아이콘과 작은 패널 간격.
-- **0.2.0**: 공통 설정, 프롬프트 조합, 일괄 초기화·비우기.
+https://github.com/kkkangkkang-creator/ST-chat-switchboard
 
-로직 테스트로 채팅/프리셋 분리, 공통·개별 우선순위, 원본 보존, 생성 중 잠금,
-드래그, 비활성화 후 정리, 월드인포 동시 요청 실패·재시도를 확인합니다.
-저장소 테스트는 `node tests/state.test.mjs`와 `node tests/world-read.test.mjs`로 실행할 수 있습니다.
-메모리 내 DOM 테스트는 실제 브라우저 렌더링이나 실제 답변 생성 통합 테스트를 대신하지 않습니다.
+기존 설치는 확장 관리 화면에서 업데이트한 뒤 새로고침하세요.
+확장 설정에서 패널을 열거나 아이콘 위치를 초기화할 수 있습니다.
 
-## 참고
+## 저장 범위
 
-- [SillyTavern 확장 개발 안내](https://docs.sillytavern.app/for-contributors/writing-extensions/)
-- [PromptManager](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/PromptManager.js)
-- [월드인포 처리](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js)
+| 항목 | 등록 목록·이름·정렬 | ON/OFF·주입 방식 |
+| --- | --- | --- |
+| 프리셋 프롬프트 | 프리셋별 공유 | 프리셋별 공유 — 다른 캐릭터·채팅에도 유지 |
+| 월드인포 | 캐릭터별 공유 | 채팅별 저장 — 새 채팅은 원본 설정을 따름 |
+| 그룹 채팅의 월드인포 | 그룹별 공유 | 채팅별 저장 |
+
+프롬프트를 추가하면 현재 ON/OFF를 해당 프리셋에 저장합니다. 월드인포를 추가하면 원본 설정을 따릅니다.
+기존 채팅으로 돌아오면 그 채팅에서 지정한 월드인포 상태를 복원합니다.
+연결되지 않은 월드인포 항목은 등록을 보존하되 관리 화면에서 숨깁니다. **정리**에서 확인·제거할 수 있습니다.
+원본 프리셋과 월드인포 파일은 변경하지 않습니다.
+
+## 패널 사용
+
+상단 탭 순서: **활성 월드인포 → 프리셋 → 월드인포 설정**. 하위 탭 없이 한 번에 이동하며, 처음에는 활성 월드인포가 열립니다.
+
+
+- **＋ 추가**: 현재 프리셋 또는 연결된 월드인포에서 항목 선택.
+- **ON/OFF**: 다음 생성에 적용. 생성 중에는 변경 잠금.
+- **🔵 / 🟢 / 🔗**: 상시 / 키워드 / 벡터 방식. 벡터 검색은 SillyTavern의 해당 설정이 필요합니다.
+- **관리 화면의 제목**: 원본 내용 미리보기.
+- **정리**: 이름·구획, 순서, 등록 제거. 항목의 **원본 따름**은 ON/OFF와 주입 방식 지정을 해제합니다.
+- **조합**: 프리셋 목록과 ON/OFF를 저장·불러오기.
+- **검색 / ↻**: 검색창 펼치기 / 현재 탭의 ON/OFF 초기화(확인 후 원본 설정을 따름). 목록과 주입 방식은 유지합니다.
+
+**정리 → 모두 삭제**는 현재 탭의 등록 항목과 구분선을 비웁니다. **구분선 추가**는 얇은 선을 맨 아래에 추가합니다. 정리 모드에서 위/아래 이동·제거할 수 있고 ON/OFF나 본문은 없습니다. 구분선은 각 목록과 함께 저장되며 생성 내용에 포함되지 않습니다.
+
+프리셋 구분 제목은 스위치 없이 표시합니다. 등록 제거·목록 비우기는 공유 목록에 반영되며 원본을 삭제하지 않습니다.
+월드인포 ON/OFF 초기화는 현재 채팅에만 적용합니다. 프롬프트 초기화는 해당 프리셋을 사용하는 모든 채팅에 적용합니다.
+
+## 이번 메시지 활성화
+
+**활성 월드인포**에서 현재 채팅의 최근 실제 생성 과정에서 활성화된 엔트리를 책별로 봅니다.
+케이크 위 작은 숫자도 이 개수입니다. 활성화 목록은 상세창 없이 제목·방식·ON/OFF만 표시합니다.
+
+- 목록에서 ON/OFF를 변경하면 해당 캐릭터의 관리 목록에 자동 등록하고 현재 채팅에 상태를 저장합니다.
+- 변경은 다음 생성부터 적용됩니다. 이번 목록과 숫자는 즉시 줄어들지 않습니다.
+- 새 생성 때 결과를 교체하고, 채팅방 이동·새로고침·확장 비활성화 때 폐기합니다.
+- 확인 전에는 배지를 숨깁니다. 정상적인 프롬프트 준비가 완료됐고 활성화가 없을 때만 `0`을 표시합니다.
+- 과거 메시지·다른 채팅의 캐시, 본문 사본, 활성화 결과의 영구 저장은 없습니다.
+- dry-run과 quiet 생성은 표시를 갱신하지 않습니다. 재생성·스와이프는 갱신합니다.
+
+활성화는 최종 API 전송 본문의 완전한 증명이 아닙니다. 후속 정규식·삽입 위치 등의 처리로 내용이 달라질 수 있습니다.
+방식 아이콘은 활성화 당시의 설정이며, 정확한 트리거 원인을 분석하는 기능은 아닙니다.
+
+## 기존 설정 이전
+
+업데이트 후 각 채팅과 프리셋을 처음 열 때 이전 설정을 옮깁니다. 기존 프리셋별 상태가 이미 있으면 이를 우선하고,
+이전에 방문하지 않은 채팅에서 발견한 누락 항목만 추가합니다. 과거 모든 채팅 파일을 한꺼번에 읽지는 않습니다.
+같은 프리셋의 항목 상태가 채팅마다 달랐다면 먼저 이전된 값이 우선합니다.
+이전 데이터는 롤백용으로 보존하며 새 버전은 이전을 마친 후 새 저장 구조를 사용합니다.
+
+공통 저장소는 확장 설정의 `chat_switchboard_v1.scopes`, 채팅별 월드인포 상태는 메타데이터의
+`chat_switchboard_scoped_v2`입니다. 캐릭터는 avatar 파일명, 프리셋은 이름으로 구분합니다.
+이름이나 ID가 변경되면 재등록이 필요할 수 있습니다. 채팅 복제·분기로 메타데이터가 복사되면 ON/OFF도 복사될 수 있습니다.
+
+## English
+
+A compact SillyTavern panel for prompt and World Info toggles, with a draggable cake launcher.
+Install using the repository URL above; update through the extension manager and reload.
+
+- **Prompts:** registrations and toggle overrides are shared by Chat Completion preset, across characters and chats.
+- **World Info:** registrations are shared by character (by group for group chats); toggle/mode overrides are saved per chat.
+  New chats follow native World Info settings. Unlinked entries remain registered but are hidden outside organize mode.
+- **Activated this message:** the latest non-dry, non-quiet generation result only. Toggle directly to auto-register an entry.
+  Changes affect the next generation and do not alter the current activation count.
+- **Badge:** hidden before a known result; zero only after prompt preparation confirms an empty result.
+  Chat changes, reloads and disable discard the result. No history, body snapshots, or persistent activation cache.
+- Existing settings migrate lazily when each chat/preset is opened. Previously migrated preset choices win conflicts.
+- Native presets/books stay untouched. Prompt overrides require Chat Completion; activation tracking uses ST events.
+
+## 검증 / Tests
+
+```sh
+node tests/state.test.mjs
+node tests/world-read.test.mjs
+node tests/scopes.test.mjs
+node --experimental-vm-modules tests/runtime.test.mjs
+```
+
+Pure logic and DOM/event simulation cover scope isolation, migration, native defaults, automatic registration,
+zero versus unknown results, generation locks, dry-run/quiet/swipe behavior and listener cleanup.
+They do not replace real SillyTavern generation or visual layout checks. Optional browser test (requires Playwright and Chromium):
+`node tests/browser.cjs`.
+
+## References
+
+- [SillyTavern extension development](https://docs.sillytavern.app/for-contributors/writing-extensions/)
+- [SillyTavern World Info source](https://github.com/SillyTavern/SillyTavern/blob/release/public/scripts/world-info.js)
+- [WorldInfoInfo](https://github.com/LenAnderson/SillyTavern-WorldInfoInfo): inspiration for displaying activation counts.
+  This implementation listens to native events; it does not intercept console logging or require the other extension.

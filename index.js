@@ -1,17 +1,22 @@
 import { eventSource, event_types, isGenerating, stopGeneration } from '../../../../script.js';
 import { promptManager } from '../../../openai.js';
 import { getSortedEntries } from '../../../world-info.js';
-import { KEY, catalogPrompts, mergeStates, resetToggles, clearItems, applyPromptCombination, normalizeState, itemKey, installPromptAdapter, applyWorldOverrides, catalogWorlds } from './core.mjs';
+import { KEY, catalogPrompts, resetToggles, clearItems, applyPromptCombination, itemKey, installPromptAdapter, applyWorldOverrides, catalogWorlds } from './core.mjs';
 import { POSITION_KEY, readPosition, positionPixels, attachFloatingDrag } from './floating.mjs';
 
+import { SCOPED_KEY, migrateScopes, readScopedState, writeScopedState } from './scopes.mjs';
+import { createActivationTracker } from './activation.mjs';
+
+const activation = createActivationTracker();
+let worldView = 'active', badge, showSearch = false;
 const context = () => SillyTavern.getContext();
 const keyOf = item => itemKey(item.kind, item.source, item.id);
 let panel, body, status, subtitle, launcher, dialog;
-let editScope = 'chat';
-let tab = 'prompt', editing = false, search = '', worldCatalog = [], worldChat = '', refreshToken = 0;
+let tab = 'world', editing = false, search = '', worldCatalog = [], worldChat = '', refreshToken = 0;
 let wiredManager, restoreManager, adapterError = '', generation = null, saving = false;
 let worldReadError = '', refreshTimer, worldRead = null;
 const hasWorldHook = Boolean(event_types.WORLDINFO_ENTRIES_LOADED);
+const hasActivationHook = Boolean(event_types.WORLD_INFO_ACTIVATED);
 let active = false;
 const subscriptions = [];
 let savedPosition, previewPosition, detachDrag;
@@ -44,12 +49,28 @@ function presetKey() {
 function presetName(source = presetKey()) {
     try { return JSON.parse(source)[1] || ''; } catch { return ''; }
 }
+function ownerKey() {
+    const c = context();
+    if (c.groupId != null) return JSON.stringify(['group', c.groupId]);
+    const avatar = c.characters?.[c.characterId]?.avatar;
+    return avatar ? JSON.stringify(['character', avatar]) : '';
+}
 function sharedSettings() { return context().extensionSettings?.[KEY] || {}; }
-function localState() { return normalizeState(context().chatMetadata?.[KEY]); }
-function sharedState() { return normalizeState(sharedSettings().state); }
-function readState() { return editScope === 'global' ? sharedState() : localState(); }
-function effectiveState() { return mergeStates(sharedSettings().state, context().chatMetadata?.[KEY]); }
-function scopeLabel() { return editScope === 'global' ? '모든 채팅' : '이 채팅'; }
+function readState() { return readScopedState(sharedSettings(), context().chatMetadata || {}, ownerKey(), presetKey()); }
+function effectiveState() { return readState(); }
+function scopeLabel() { return tab === 'prompt' ? '이 프리셋 · 모든 채팅' : `목록: ${context().groupId != null ? '이 그룹' : '이 캐릭터'} · ON/OFF: 이 채팅`; }
+function ensureScopes() {
+    const c = context();
+    if (!chatKey() || !c.extensionSettings || !c.chatMetadata) return;
+    const previous = c.chatMetadata[SCOPED_KEY], preset = presetKey();
+    if (sharedSettings().scopes && previous?.worldMigrated && (!preset || previous.migratedPresets?.includes(preset))) return;
+    const settings = structuredClone(sharedSettings());
+    if (migrateScopes(settings, c.chatMetadata, ownerKey(), presetKey())) {
+        c.extensionSettings[KEY] = settings;
+        // Start both saves while this chat is still current, never after an await.
+        Promise.all([c.saveSettingsDebounced(), c.saveMetadata()]).catch(error => notify(`설정 이전 저장 실패: ${error.message}`, true));
+    }
+}
 function liveScope() { return { chat: chatKey(), preset: presetKey(), state: effectiveState() }; }
 async function saveShared(update) {
     const c = context();
@@ -99,21 +120,18 @@ function unavailableReason(item) {
 }
 async function changeState(update, expectedChat = chatKey()) {
     if (!expectedChat || expectedChat !== chatKey()) return;
-    if (isGenerating()) { notify('답변 생성이 끝난 뒤 변경해주세요.'); return; }
+    if (isGenerating()) { notify('생성 완료 후 변경해주세요.'); return; }
     if (saving) return;
     generation = null;
-    const metadata = context().chatMetadata;
-    if (!metadata) return;
-    const targetScope = editScope;
-    const next = readState();
+    const c = context(), metadata = c.chatMetadata;
+    if (!metadata || !c.extensionSettings) return;
+    const next = readState(), settings = structuredClone(sharedSettings());
     update(next);
-    if (targetScope === 'chat') metadata[KEY] = normalizeState(next);
-    saving = true;
-    render();
+    writeScopedState(settings, metadata, ownerKey(), presetKey(), next);
+    c.extensionSettings[KEY] = settings;
+    saving = true; render();
     try {
-        // Save immediately through ST, never debounce a closure into a different chat.
-        if (targetScope === 'global') await saveShared(settings => { settings.state = normalizeState(next); });
-        else await context().saveMetadata();
+        await Promise.all([c.saveSettingsDebounced(), c.saveMetadata()]);
     } catch (error) { notify(`설정 저장에 실패했습니다: ${error.message}`, true); }
     finally { saving = false; render(); }
 }
@@ -128,7 +146,7 @@ function button(text, fn, cls = '', title = '') {
     const b = el('button', cls, text);
     b.type = 'button';
     b.addEventListener('click', fn);
-    if (title) b.title = title;
+    if (title) { b.title = title; b.setAttribute('aria-label', title); }
     return b;
 }
 function closeDialog() {
@@ -184,26 +202,26 @@ function appendPresetHeadings(container, item, previous) {
 
 async function openPicker() {
     if (!chatKey() || isGenerating() || saving) return;
-    const scope = chatKey(), source = presetKey(), kind = tab, target = editScope;
+    const scope = chatKey(), source = presetKey(), kind = tab;
     if (kind === 'world') await refreshWorlds();
-    if (scope !== chatKey() || source !== presetKey() || kind !== tab || target !== editScope) return;
+    if (scope !== chatKey() || source !== presetKey() || kind !== tab) return;
     const all = catalog();
     const existing = new Set(readState().items.map(keyOf));
     const choices = all.filter(item => !existing.has(keyOf(item)));
     const selected = new Set();
     const d = modal(kind === 'prompt' ? '프리셋 항목 추가' : '월드인포 항목 추가');
-    d.append(el('p', 'csb-muted', '추가한 항목은 원본의 현재 ON/OFF 상태로 시작합니다.'));
+    d.append(el('p', 'csb-muted', kind === 'prompt' ? '현재 ON/OFF를 이 프리셋에 저장합니다.' : '등록 후 원본 설정을 따릅니다.'));
     const filter = el('input', 'csb-search'); filter.type = 'search'; filter.placeholder = '제목 · 책 이름 · 내용 검색'; filter.setAttribute('aria-label', '추가할 항목 검색');
     const list = el('div', 'csb-picker-list');
     const footer = el('footer', 'csb-modal-footer');
     const add = button('0개 추가', async () => {
-        if (scope !== chatKey() || source !== presetKey() || target !== editScope) return closeDialog();
+        if (scope !== chatKey() || source !== presetKey()) return closeDialog();
         const picked = choices.filter(x => selected.has(keyOf(x)));
         closeDialog();
         await changeState(s => {
             const keys = new Set(s.items.map(keyOf));
             for (const item of picked) if (!keys.has(keyOf(item))) {
-                s.items.push({ kind: item.kind, source: item.source, id: item.id, name: item.name, alias: '', group: '', state: item.enabled });
+                s.items.push({ kind: item.kind, source: item.source, id: item.id, name: item.name, alias: '', group: '', state: item.kind === 'prompt' ? item.enabled : null });
             }
         }, scope);
     }, 'csb-primary');
@@ -244,20 +262,20 @@ async function openPicker() {
 
 function openBulk(action) {
     if (!chatKey() || isGenerating() || saving) return;
-    const chat = chatKey(), kind = tab, target = editScope;
-    const d = modal(action === 'clear' ? '선택 항목 비우기' : 'ON/OFF 초기화');
+    const chat = chatKey(), kind = tab;
+    const d = modal(action === 'clear' ? '모두 삭제' : 'ON/OFF 초기화');
     d.append(el('p', 'csb-muted', `${scopeLabel()} · ${kind === 'prompt' ? '프리셋' : '월드인포'} 탭 전체 (검색으로 숨겨진 항목 포함)`));
-    d.append(el('p', '', action === 'clear' ? '이 범위의 선택 목록과 상태 지정을 비웁니다. 원본 항목과 저장한 조합은 삭제하지 않습니다.' : '선택한 목록과 주입 방식은 유지합니다. ON/OFF는 모든 채팅 설정 또는 원본을 다시 따릅니다.'));
+    d.append(el('p', '', action === 'clear' ? '공유 등록 목록에서 제거합니다. 원본과 저장한 조합은 유지됩니다.' : '목록과 주입 방식은 유지하고 ON/OFF는 원본을 따릅니다.'));
     d.append(button('취소', closeDialog, 'csb-quiet'), button('확인', async () => {
-        if (chat !== chatKey() || kind !== tab || target !== editScope) return closeDialog();
+        if (chat !== chatKey() || kind !== tab) return closeDialog();
         closeDialog();
         await changeState(s => (action === 'clear' ? clearItems : resetToggles)(s, kind), chat);
     }, 'csb-primary'));
 }
 function openCombinations() {
     if (!chatKey() || !presetKey() || isGenerating() || saving) return;
-    const chat = chatKey(), source = presetKey(), target = editScope;
-    const valid = () => chat === chatKey() && source === presetKey() && target === editScope && !isGenerating() && !saving;
+    const chat = chatKey(), source = presetKey();
+    const valid = () => chat === chatKey() && source === presetKey() && !isGenerating() && !saving;
     const d = modal('프롬프트 조합');
     d.append(el('p', 'csb-muted', `${presetName(source)} · 불러올 위치: ${scopeLabel()}`));
     const field = el('label', 'csb-field', '현재 선택 목록과 ON/OFF 저장');
@@ -268,7 +286,7 @@ function openCombinations() {
         if (!label) return notify('조합 이름을 입력해주세요.');
         const all = Array.isArray(sharedSettings().combinations) ? sharedSettings().combinations : [];
         if (all.some(x => x.source === source && x.name === label)) return notify('같은 이름이 있어요. 다른 이름으로 저장하거나 기존 조합을 삭제해주세요.');
-        const effective = indexItems((editScope === 'global' ? sharedState() : effectiveState()).items);
+        const effective = indexItems(effectiveState().items);
         const originals = indexItems(promptCatalog());
         const items = readState().items.filter(x => x.kind === 'prompt' && x.source === source).map(x => ({ ...x,
             state: effective.get(keyOf(x))?.state ?? originals.get(keyOf(x))?.enabled ?? null }));
@@ -303,12 +321,37 @@ function openCombinations() {
     d.append(list, el('p', 'csb-muted', '불러오면 선택한 범위에서 현재 프리셋의 목록과 ON/OFF가 교체됩니다. 조합은 다른 채팅에서도 사용할 수 있습니다.'));
 }
 
+function addSeparator() {
+    if (!chatKey() || (tab === 'prompt' && !presetKey())) return;
+    const kind = tab, source = kind === 'prompt' ? presetKey() : '';
+    changeState(s => s.items.push({ kind, source, id: `separator-${globalThis.crypto.randomUUID()}`,
+        name: '구분선', separator: true, state: null, activation: null }));
+}
+function rowActions(item, busy, ordered) {
+    const key = keyOf(item), index = ordered.findIndex(x => keyOf(x) === key);
+    const actions = el('div', 'csb-row-actions');
+    const specs = [
+        ...(!item.separator ? [['edit', '이름·구획 변경', 'fa-feather', () => editItem(item)]] : []),
+        ['up', '위로 이동', 'fa-arrow-up', () => changeState(s => moveItem(s, key, -1))],
+        ['down', '아래로 이동', 'fa-arrow-down', () => changeState(s => moveItem(s, key, 1))],
+        ['remove', '제거', 'fa-trash-can', () => changeState(s => { s.items = s.items.filter(x => keyOf(x) !== key); })],
+    ];
+    for (const [id, label, icon, action] of specs) {
+        const b = button('', action, 'csb-action-icon', label);
+        const glyph = el('i', `fa-solid ${icon}`); glyph.setAttribute('aria-hidden', 'true'); b.append(glyph);
+        b.dataset.rowAction = id; b.setAttribute('aria-label', `${item.alias || item.name} · ${label}`);
+        b.disabled = busy || (id === 'up' && index === 0) || (id === 'down' && index === ordered.length - 1);
+        actions.append(b);
+    }
+    return actions;
+}
+const itemGroup = item => item.group || (item.kind === 'world' ? item.source : '');
 function moveItem(state, key, direction) {
     const index = state.items.findIndex(item => keyOf(item) === key), item = state.items[index];
     if (!item) return;
     for (let next = index + direction; next >= 0 && next < state.items.length; next += direction) {
         const other = state.items[next];
-        if (other.kind === item.kind && other.group === item.group) {
+        if (other.kind === item.kind) {
             [state.items[index], state.items[next]] = [other, item];
             break;
         }
@@ -316,15 +359,19 @@ function moveItem(state, key, direction) {
 }
 
 function render() {
+    updateBadge();
     if (!panel) return;
+    const activeView = tab === 'world' && worldView === 'active';
+    panel.querySelectorAll('[data-action=add], [data-action=edit]').forEach(b => { b.hidden = activeView; });
+    panel.querySelector('.csb-search').hidden = !showSearch;
     const previousScroll = body.scrollTop;
-    const c = context(), hasChat = Boolean(chatKey()), busy = isGenerating() || saving;
-    subtitle.textContent = hasChat ? editScope === 'global' ? '모든 채팅의 공통 설정' : `${c.name2 || '현재 채팅'} · 개별 설정 우선` : '먼저 채팅방을 열어주세요';
-    panel.querySelectorAll('[data-scope]').forEach(b => { b.classList.toggle('is-active', b.dataset.scope === editScope); b.disabled = busy; b.setAttribute('aria-pressed', String(b.dataset.scope === editScope)); });
+    const hasChat = Boolean(chatKey()), busy = isGenerating() || saving;
+    subtitle.textContent = hasChat ? activeView ? '현재 채팅 · 이번 생성 결과' : scopeLabel() : '먼저 채팅방을 열어주세요';
     const combos = panel.querySelector('[data-action="combos"]'); if (combos) { combos.hidden = tab !== 'prompt'; combos.disabled = !hasChat || busy || !presetKey(); }
-    status.textContent = saving ? '설정 저장 중…' : isGenerating() ? '답변 생성 중 · 완료 후 변경할 수 있어요' : '변경한 상태는 다음 답변부터 적용됩니다';
-    panel.querySelectorAll('[data-tab]').forEach(b => { b.classList.toggle('is-active', b.dataset.tab === tab); b.setAttribute('aria-selected', String(b.dataset.tab === tab)); });
-    panel.querySelector('[data-action="edit"]').textContent = editing ? '정리 완료' : '정리';
+    status.textContent = saving ? '설정 저장 중…' : isGenerating() ? '생성 중 · 변경 잠금' : '변경은 다음 생성부터 적용';
+    panel.querySelectorAll('[data-tab]').forEach(b => { b.classList.toggle('is-active', b.dataset.tab === (activeView ? 'active' : tab)); b.setAttribute('aria-selected', String(b.dataset.tab === (activeView ? 'active' : tab))); });
+    panel.querySelector('[data-action="edit"]').textContent = editing ? '완료' : '정리';
+    panel.querySelector('[data-action="reset"]').disabled = !hasChat || busy;
     panel.querySelector('[data-action="add"]').disabled = !hasChat || busy || (tab === 'prompt' ? Boolean(adapterError) || !presetKey() : !hasWorldHook);
     const currentSource = panel.querySelector('.csb-source');
     currentSource.textContent = tab === 'prompt' ? presetName() || 'Chat Completion 프리셋을 선택해주세요' : '현재 연결된 월드인포';
@@ -332,14 +379,16 @@ function render() {
     if (!hasChat) { body.append(el('div', 'csb-empty', '채팅을 열면 원하는 항목을 골라 담을 수 있어요.')); return; }
     const error = tab === 'prompt' ? adapterError : !hasWorldHook ? '이 SillyTavern 버전은 월드인포 제어를 지원하지 않습니다.' : worldReadError;
     if (error) body.append(el('p', 'csb-error', error));
+    if (activeView) { renderActivated(busy, error); body.scrollTop = previousScroll; return; }
     const query = search.toLocaleLowerCase();
     const originals = indexItems(tab === 'prompt' ? promptCatalog(true) : worldChat === chatKey() ? worldCatalog : []);
-    const items = readState().items.filter(item => item.kind === tab && !originals.get(keyOf(item))?.heading && `${item.alias} ${item.name} ${item.group} ${item.source} ${originals.get(keyOf(item))?.sectionTitle || ''}`.toLocaleLowerCase().includes(query));
-    const effectiveItems = editing ? null : indexItems((editScope === 'global' ? sharedState() : effectiveState()).items);
+    const ordered = readState().items.filter(item => item.kind === tab);
+    const items = ordered.filter(item => item.kind === tab && (item.separator || tab !== 'world' || editing || originals.has(keyOf(item))) && !originals.get(keyOf(item))?.heading && `${item.alias} ${item.name} ${item.group} ${item.source} ${originals.get(keyOf(item))?.sectionTitle || ''}`.toLocaleLowerCase().includes(query));
+    const effectiveItems = editing ? null : indexItems(effectiveState().items);
     if (editing) {
         const actions = el('div', 'csb-bulk');
-        for (const [label, action] of [['ON/OFF 초기화', 'reset'], ['선택 항목 비우기', 'clear']]) {
-            const b = button(label, () => openBulk(action), 'csb-quiet'); b.disabled = busy; actions.append(b);
+        for (const [label, action] of [['모두 삭제', 'clear'], ['구분선 추가', 'separator']]) {
+            const b = button(label, () => action === 'separator' ? addSeparator() : openBulk(action), 'csb-quiet'); b.disabled = busy || (tab === 'prompt' && !presetKey()); actions.append(b);
         }
         body.append(actions);
     }
@@ -348,13 +397,27 @@ function render() {
         empty.append(el('strong', '', search ? '검색 결과가 없어요' : '자주 바꾸는 항목만 골라두세요'), el('p', '', search ? '다른 검색어를 입력해보세요.' : '위의 항목 추가 버튼에서 여러 개를 한 번에 선택할 수 있어요.'));
         body.append(empty);
     }
-    const groups = new Map();
-    for (const item of items) { if (!groups.has(item.group)) groups.set(item.group, []); groups.get(item.group).push(item); }
+    // Preserve saved order, including separators between entries from the same book.
+    const groups = [];
+    for (const item of items) {
+        const group = item.separator ? '' : itemGroup(item);
+        const previous = groups.at(-1);
+        if (item.separator || !previous || previous[0] !== group || previous[1].at(-1)?.separator) groups.push([group, [item]]);
+        else previous[1].push(item);
+    }
     for (const [group, members] of groups) {
         const section = el('section', 'csb-section');
         if (group) section.append(el('h4', '', group));
         let previousSection = '';
-        for (const [index, item] of members.entries()) {
+        for (const item of members) {
+            if (item.separator) {
+                section.classList.add('csb-divider-section');
+                const divider = el('div', `csb-divider${editing ? ' is-editing' : ''}`);
+                const line = el('span', 'csb-divider-line'); line.setAttribute('role', 'separator'); line.setAttribute('aria-label', '구분선');
+                divider.append(line);
+                if (editing) divider.append(rowActions(item, busy, ordered));
+                section.append(divider); continue;
+            }
             const key = keyOf(item), native = originals.get(key);
             if (!group) previousSection = appendPresetHeadings(section, native, previousSection);
             const row = el('div', `csb-row${native ? '' : ' is-missing'}${editing ? ' is-editing' : ''}`);
@@ -363,10 +426,11 @@ function render() {
             const source = item.kind === 'prompt' ? presetName(item.source) : item.source;
             row.append(copy);
             if (!editing) {
-                copy.append(el('small', 'csb-muted', native ? source : `${source} · ${unavailableReason(item)}`));
+                if (!native) copy.append(el('small', 'csb-muted', `${source} · ${unavailableReason(item)}`));
                 const effective = effectiveItems.get(key);
                 const on = effective?.state ?? native?.enabled ?? false;
                 const toggle = button(on ? 'ON' : 'OFF', () => changeState(s => { const found = s.items.find(x => keyOf(x) === key); if (found) found.state = !on; }), `csb-switch${on ? ' is-on' : ''}`);
+                toggle.title = effective?.state == null ? '원본 따름' : item.kind === 'prompt' ? '프리셋 지정' : '이 채팅 지정';
                 toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-checked', String(on)); toggle.setAttribute('aria-label', `${item.alias || item.name} 켜기/끄기`);
                 toggle.disabled = busy || !native || Boolean(error);
                 if (item.kind === 'world') {
@@ -387,27 +451,62 @@ function render() {
                 }
                 row.append(toggle);
             } else {
-                const actions = el('div', 'csb-row-actions');
-                const actionsList = [
-                    ['edit', '이름·구획 변경', 'fa-feather', () => editItem(item)],
-                    ['up', '위로 이동', 'fa-arrow-up', () => changeState(s => moveItem(s, key, -1))],
-                    ['down', '아래로 이동', 'fa-arrow-down', () => changeState(s => moveItem(s, key, 1))],
-                    ['remove', '제거', 'fa-trash-can', () => changeState(s => { s.items = s.items.filter(x => keyOf(x) !== key); })],
-                ];
-                for (const [id, label, icon, action] of actionsList) {
-                    const b = button('', action, 'csb-action-icon', label);
-                    const glyph = el('i', `fa-solid ${icon}`); glyph.setAttribute('aria-hidden', 'true'); b.append(glyph);
-                    b.dataset.rowAction = id; b.setAttribute('aria-label', `${item.alias || item.name} · ${label}`);
-                    b.disabled = busy || (id === 'up' && index === 0 && !search) || (id === 'down' && index === members.length - 1 && !search);
-                    actions.append(b);
-                }
-                row.append(actions);
+                row.append(rowActions(item, busy, ordered));
             }
             section.append(row);
         }
         body.append(section);
     }
     body.scrollTop = previousScroll;
+}
+
+function updateBadge() {
+    if (!launcher || !badge) return;
+    const result = activation.result;
+    const known = result.chat === chatKey() && result.phase === 'ready';
+    badge.hidden = !known;
+    badge.textContent = known ? String(result.entries.length) : '';
+    launcher.setAttribute('aria-label', `채팅 스위치보드 열기${known ? ` · 이번 메시지 활성화 ${result.entries.length}개` : ''}`);
+}
+function renderActivated(busy, error) {
+    if (!hasActivationHook) { body.append(el('p', 'csb-empty', '이 버전은 활성화 조회를 지원하지 않습니다.')); return; }
+    const result = activation.result;
+    const known = result.chat === chatKey() && result.phase === 'ready';
+    panel.querySelector('.csb-source').textContent = known ? `활성화 ${result.entries.length}개` : '이번 메시지 활성화';
+    if (!known) {
+        body.append(el('p', 'csb-empty', result.phase === 'pending' ? '활성화 확인 중…' : '생성 후 확인할 수 있어요.'));
+        return;
+    }
+    if (!result.entries.length) { body.append(el('p', 'csb-empty', '활성화된 항목이 없습니다.')); return; }
+    const states = indexItems(readState().items), originals = indexItems(worldChat === chatKey() ? worldCatalog : []);
+    const query = search.toLocaleLowerCase();
+    const groups = new Map();
+    for (const entry of result.entries) {
+        if (!`${entry.name} ${entry.source}`.toLocaleLowerCase().includes(query)) continue;
+        if (!groups.has(entry.source)) groups.set(entry.source, []);
+        groups.get(entry.source).push(entry);
+    }
+    if (!groups.size) body.append(el('p', 'csb-empty', '검색 결과가 없습니다.'));
+    for (const [book, entries] of groups) {
+        const section = el('section', 'csb-section'); section.append(el('h4', '', book));
+        for (const entry of entries) {
+            const key = keyOf(entry), state = states.get(key), native = originals.get(key);
+            const on = state?.state ?? native?.enabled ?? entry.enabled;
+            const row = el('div', 'csb-row');
+            const mode = el('span', 'csb-active-mode', ({ constant: '🔵', normal: '🟢', vectorized: '🔗' })[entry.activation]);
+            mode.title = activationLabels[entry.activation]; mode.setAttribute('aria-label', mode.title);
+            const title = el('span', 'csb-active-title', state?.alias || entry.name);
+            const toggle = button(on ? 'ON' : 'OFF', () => changeState(s => {
+                let item = s.items.find(x => keyOf(x) === key);
+                if (!item) { item = { kind: 'world', source: entry.source, id: entry.id, name: entry.name, alias: '', group: '', state: null, activation: null }; s.items.push(item); }
+                item.state = !on;
+            }), `csb-switch${on ? ' is-on' : ''}`, `${entry.name} · 다음 생성 ${on ? '끄기' : '켜기'}`);
+            toggle.setAttribute('role', 'switch'); toggle.setAttribute('aria-checked', String(on));
+            toggle.disabled = busy || Boolean(error) || !native;
+            row.append(mode, title, toggle); section.append(row);
+        }
+        body.append(section);
+    }
 }
 
 async function refreshWorlds() {
@@ -474,7 +573,7 @@ function buildUI() {
     if (panel) return;
     launcher = button('', () => setPanelOpen(panel.hidden), 'csb-launcher', '눌러서 열기 · 끌어서 이동');
     // Inline priorities protect the actual control from mobile theme rules.
-    for (const [name, value] of Object.entries({ display:'block', position:'fixed', right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', 'z-index':'2147483646', 'border-radius':'0', background:'transparent', color:'#37433b', border:'0', 'font-size':'27px', 'line-height':'44px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'none', 'touch-action':'none', 'user-select':'none', cursor:'grab' })) {
+    for (const [name, value] of Object.entries({ display:'block', position:'fixed', right:'auto', bottom:'auto', width:'48px', height:'48px', 'min-width':'48px', 'max-width':'48px', 'min-height':'48px', 'max-height':'48px', margin:'0', padding:'0', transform:'none', opacity:'1', visibility:'visible', 'pointer-events':'auto', overflow:'visible', 'z-index':'2147483646', 'border-radius':'0', background:'transparent', color:'#37433b', border:'0', 'font-size':'27px', 'line-height':'44px', 'text-align':'center', 'writing-mode':'horizontal-tb', 'box-shadow':'none', 'touch-action':'none', 'user-select':'none', cursor:'grab' })) {
         launcher.style.setProperty(name, value, 'important');
     }
     const art = el('img', 'csb-launcher-art');
@@ -483,8 +582,9 @@ function buildUI() {
     // 48px touch target; transparent margins leave a roughly 36px visible cake.
     for (const [name, value] of Object.entries({ display:'block', width:'48px', height:'48px', 'max-width':'none', margin:'0', padding:'0', border:'0', background:'transparent', 'object-fit':'contain', 'image-rendering':'pixelated', 'pointer-events':'none', 'user-select':'none' })) art.style.setProperty(name, value, 'important');
     const control = launcher;
-    art.addEventListener('error', () => { art.remove(); control.textContent = '🍰'; });
-    launcher.append(art);
+    art.addEventListener('error', () => { art.remove(); control.prepend(el('span', '', '🍰')); });
+    badge = el('span', 'csb-badge'); badge.hidden = true; badge.setAttribute('aria-hidden', 'true');
+    launcher.append(art, badge);
     detachDrag = attachFloatingDrag(launcher, {
         getPosition: () => savedPosition, getViewport: floatingViewport,
         preview: p => { previewPosition = p; showFloatingIcon(); },
@@ -498,26 +598,23 @@ function buildUI() {
     titles.append(el('h2', '', '채팅 스위치'));
     subtitle = el('p', 'csb-muted'); titles.append(subtitle);
     header.append(titles, button('×', () => { setPanelOpen(false); launcher.focus(); }, 'csb-close', '패널 닫기'));
-    const scopes = el('div', 'csb-scopes');
-    for (const [value, label] of [['chat', '이 채팅'], ['global', '모든 채팅']]) {
-        const b = button(label, () => { if (isGenerating() || saving) return; closeDialog(); editScope = value; render(); });
-        b.dataset.scope = value; scopes.append(b);
-    }
     const tabs = el('div', 'csb-tabs'); tabs.setAttribute('role', 'tablist');
-    for (const [kind, label] of [['prompt', '프리셋'], ['world', '월드인포']]) {
-        const b = button(label, () => { tab = kind; search = ''; input.value = ''; render(); if (kind === 'world') refreshWorlds(); });
+    for (const [kind, label] of [['active', '활성 월드인포'], ['prompt', '프리셋'], ['world', '월드인포 설정']]) {
+        const b = button(label, () => { closeDialog(); editing = false; tab = kind === 'active' ? 'world' : kind; worldView = kind === 'active' ? 'active' : 'manage'; search = ''; input.value = ''; render(); if (tab === 'world') refreshWorlds(); }, '', kind === 'active' ? '현재 활성화된 월드인포' : kind === 'world' ? '이 채팅 월드인포 설정' : '프리셋');
         b.dataset.tab = kind; b.setAttribute('role', 'tab'); tabs.append(b);
     }
     const toolbar = el('div', 'csb-toolbar');
-    const add = button('＋ 항목 추가', openPicker, 'csb-primary'); add.dataset.action = 'add';
+    const add = button('＋ 추가', openPicker, 'csb-primary'); add.dataset.action = 'add';
     const edit = button('정리', () => { editing = !editing; render(); }, 'csb-quiet'); edit.dataset.action = 'edit';
     const combinations = button('조합', openCombinations, 'csb-quiet', '프롬프트 ON/OFF 조합'); combinations.dataset.action = 'combos';
-    toolbar.append(add, combinations, button('↻', () => { ensureAdapter(); render(); refreshWorlds(); }, 'csb-quiet', '목록 새로고침'), edit);
+    const searchButton = button('⌕', () => { showSearch = !showSearch; if (!showSearch) { search = ''; input.value = ''; } render(); if (showSearch) input.focus(); }, 'csb-quiet', '검색');
+    const reset = button('↻', () => openBulk('reset'), 'csb-quiet', 'ON/OFF 초기화'); reset.dataset.action = 'reset';
+    toolbar.append(add, combinations, searchButton, reset, edit);
     const source = el('p', 'csb-source csb-muted');
-    const input = el('input', 'csb-search'); input.type = 'search'; input.placeholder = '내 버튼 검색'; input.setAttribute('aria-label', '내 버튼 검색');
+    const input = el('input', 'csb-search'); input.type = 'search'; input.placeholder = '제목 · 책 검색'; input.setAttribute('aria-label', '내 버튼 검색');
     input.addEventListener('input', () => { search = input.value; render(); });
     body = el('div', 'csb-body'); status = el('footer', 'csb-status'); status.setAttribute('role', 'status');
-    panel.append(header, scopes, tabs, toolbar, source, input, body, status);
+    panel.append(header, tabs, toolbar, source, input, body, status);
     document.body.append(launcher, panel);
     showFloatingIcon();
     render();
@@ -525,7 +622,7 @@ function buildUI() {
 
 function init() {
     if (!active) return;
-    ensureAdapter(); buildUI();
+    ensureScopes(); ensureAdapter(); buildUI();
     showFloatingIcon();
     if (chatKey()) refreshWorlds();
     const settings = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
@@ -564,11 +661,22 @@ export function onEnable() {
         const scope = getScope();
         if (scope.chat) applyWorldOverrides(payload, scope.state);
     });
-    listen(event_types.GENERATION_AFTER_COMMANDS, (_type, _options, dryRun) => {
-        ensureAdapter();
-        if (!dryRun) { generation = structuredClone(liveScope()); setTimeout(render, 0); }
+    listen(event_types.GENERATION_AFTER_COMMANDS, (type, _options, dryRun) => {
+        ensureScopes(); ensureAdapter();
+        if (!dryRun) {
+            generation = { ...structuredClone(liveScope()), trackActivation: type !== 'quiet' && hasActivationHook };
+            if (generation.trackActivation) activation.begin(chatKey());
+            setTimeout(render, 0);
+        }
+    });
+    if (event_types.WORLD_INFO_ACTIVATED) listen(event_types.WORLD_INFO_ACTIVATED, entries => {
+        if (generation?.trackActivation) { activation.capture(chatKey(), entries); render(); }
+    });
+    if (event_types.GENERATE_AFTER_DATA) listen(event_types.GENERATE_AFTER_DATA, (_data, dryRun) => {
+        if (!dryRun && generation?.trackActivation) { activation.prepared(chatKey()); render(); }
     });
     for (const name of ['GENERATION_ENDED', 'GENERATION_STOPPED']) if (event_types[name]) listen(event_types[name], () => {
+        if (generation?.trackActivation) activation.finish(chatKey());
         generation = null; scheduleRefresh();
     });
     for (const name of ['CHAT_CHANGED', 'OAI_PRESET_CHANGED_AFTER']) if (event_types[name]) listen(event_types[name], () => {
@@ -576,6 +684,8 @@ export function onEnable() {
             if (isGenerating()) { stopGeneration(); notify('채팅 또는 프리셋이 바뀌어 진행 중인 생성을 중단했습니다.'); }
             generation = null;
         }
+        if (name === 'CHAT_CHANGED') activation.reset();
+        ensureScopes(); updateBadge();
         closeDialog(); worldCatalog = []; worldChat = ''; refreshToken++; search = '';
         if (panel) panel.querySelector('.csb-search').value = '';
         scheduleRefresh();
@@ -598,7 +708,7 @@ export function onDisable() {
     document.removeEventListener('DOMContentLoaded', init);
     clearTimeout(refreshTimer); refreshToken++;
     restoreManager?.(); restoreManager = null; wiredManager = undefined;
-    generation = null; closeDialog();
+    activation.reset(); badge = null; generation = null; closeDialog();
     panel?.remove(); launcher?.remove(); document.getElementById('csb-settings')?.remove();
     panel = null; launcher = null; worldCatalog = []; worldChat = '';
 }

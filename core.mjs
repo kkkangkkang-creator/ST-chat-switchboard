@@ -14,12 +14,13 @@ export function normalizeState(value) {
     }).map(item => ({
         kind: item.kind, source: item.source, id: String(item.id),
         name: String(item.name || item.id), alias: String(item.alias || ''), group: String(item.group || ''),
-        state: typeof item.state === 'boolean' ? item.state : null,
-        activation: item.kind === 'world' && ['constant', 'normal', 'vectorized'].includes(item.activation) ? item.activation : null,
+        ...(item.separator === true ? { separator: true } : {}),
+        state: !item.separator && typeof item.state === 'boolean' ? item.state : null,
+        activation: !item.separator && item.kind === 'world' && ['constant', 'normal', 'vectorized'].includes(item.activation) ? item.activation : null,
     })) };
 }
 export function overrideFor(state, kind, source, id) {
-    const item = state?.items?.find(x => x.kind === kind && x.source === source && String(x.id) === String(id));
+    const item = state?.items?.find(x => !x.separator && x.kind === kind && x.source === source && String(x.id) === String(id));
     return typeof item?.state === 'boolean' ? item.state : null;
 }
 

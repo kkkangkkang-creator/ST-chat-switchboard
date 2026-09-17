@@ -92,3 +92,43 @@
 .csb-section .csb-preset-heading { margin-top:7px; padding:5px 6px; border-radius:4px; }
 
 .csb-preset-heading { white-space:pre-line; }
+
+/* Dense layout with book headings instead of repeating sources on every row. */
+.csb-panel { width:330px; padding:9px; gap:5px; border-radius:11px; }
+.csb-panel h2 { font-size:14px; margin:1px 0; }
+.csb-header { align-items:center; gap:6px; }
+.csb-header p { font-size:11px; }
+.csb-panel button { min-height:28px; padding:4px 7px; font-size:12px; border-radius:5px; }
+.csb-toolbar { gap:4px; }
+.csb-row { flex-wrap:nowrap; padding:2px 0; gap:4px; }
+.csb-section { margin-bottom:6px; }
+.csb-section h4 { font-size:11px; margin:5px 0 2px; overflow-wrap:anywhere; }
+.csb-panel .csb-switch { min-height:28px; min-width:40px; padding:3px 6px; }
+.csb-panel select.csb-mode { flex-basis:28px; width:28px; height:28px; font-size:15px; }
+.csb-status { font-size:11px; padding-top:5px; }
+.csb-panel [hidden],#csb-floating-launcher .csb-badge[hidden] { display:none!important; }
+.csb-active-title { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:13px; }
+.csb-active-mode { flex:0 0 26px; text-align:center; font-size:13px; }
+#csb-floating-launcher .csb-badge { position:absolute; top:0; right:-1px; display:block; min-width:17px; height:17px; padding:0 4px; border-radius:10px; background:#526b5b; color:#fff; border:1px solid #faf9f6; font:600 10px/15px system-ui,sans-serif; text-align:center; pointer-events:none; text-shadow:none; }
+@media(max-width:520px) { .csb-panel { width:calc(100vw - 16px); padding:9px; } }
+@media(pointer:coarse) {
+    .csb-panel button,.csb-dialog button { min-height:40px; }
+    .csb-panel .csb-switch,.csb-panel select.csb-mode { min-height:40px; height:40px; min-width:40px; }
+    .csb-panel .csb-row-actions .csb-action-icon { min-width:36px; width:36px; min-height:40px; height:40px; }
+    .csb-panel input.csb-search,.csb-dialog input:not([type=checkbox]) { font-size:16px; }
+}
+
+/* Small organize actions and movable, non-interactive separators. */
+.csb-bulk { gap:5px; margin-bottom:5px; }
+.csb-panel .csb-bulk button { padding:3px 7px; min-height:26px; font-size:11px; }
+.csb-divider-section { margin:0; }
+.csb-divider { display:flex; align-items:center; gap:6px; min-height:8px; padding:3px 0; }
+.csb-divider-line { flex:1; min-width:0; border-top:1px solid var(--csb-muted); opacity:.55; }
+.csb-divider.is-editing { min-height:26px; padding:0; }
+.csb-divider .csb-row-actions .csb-action-icon { height:26px; min-height:26px; }
+@media(pointer:coarse) {
+    .csb-panel .csb-bulk button { min-height:32px; }
+    .csb-divider .csb-row-actions .csb-action-icon { height:32px; min-height:32px; }
+}
+
+.csb-tabs button { min-width:0; word-break:keep-all; }
