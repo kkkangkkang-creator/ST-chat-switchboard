@@ -132,3 +132,10 @@
 }
 
 .csb-tabs button { min-width:0; word-break:keep-all; }
+
+/* Compact, theme-native floating icon size setting. */
+#csb-settings .csb-size-control { display:flex; align-items:center; gap:8px; padding:4px 0 8px; min-width:0; }
+#csb-settings .csb-size-control label { flex:0 0 auto; font-size:13px; }
+#csb-settings .csb-size-control input[type="range"] { flex:1 1 80px; width:0; min-width:40px; margin:0; }
+#csb-settings .csb-size-control output { flex:0 0 38px; font-size:12px; font-variant-numeric:tabular-nums; text-align:right; }
+#csb-settings .csb-size-control button { flex:0 0 32px; width:32px; min-width:32px; margin:0; padding:4px; }

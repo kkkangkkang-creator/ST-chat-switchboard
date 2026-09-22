@@ -2,7 +2,7 @@ import { eventSource, event_types, isGenerating, stopGeneration } from '../../..
 import { promptManager } from '../../../openai.js';
 import { getSortedEntries } from '../../../world-info.js';
 import { KEY, catalogPrompts, resetToggles, clearItems, applyPromptCombination, itemKey, installPromptAdapter, applyWorldOverrides, catalogWorlds } from './core.mjs';
-import { POSITION_KEY, readPosition, positionPixels, attachFloatingDrag } from './floating.mjs';
+import { POSITION_KEY, SIZE_KEY, DEFAULT_SIZE, normalizeSize, readSize, touchSize, readPosition, positionPixels, attachFloatingDrag } from './floating.mjs';
 
 import { SCOPED_KEY, migrateScopes, readScopedState, writeScopedState } from './scopes.mjs';
 import { createActivationTracker } from './activation.mjs';
@@ -20,6 +20,8 @@ const hasActivationHook = Boolean(event_types.WORLD_INFO_ACTIVATED);
 let active = false;
 const subscriptions = [];
 let savedPosition, previewPosition, detachDrag;
+let floatingSize = DEFAULT_SIZE;
+try { floatingSize = readSize(globalThis.localStorage); } catch {}
 try { savedPosition = readPosition(globalThis.localStorage); } catch { savedPosition = null; }
 function floatingViewport() {
     const v = globalThis.visualViewport;
@@ -558,9 +560,24 @@ function setPanelOpen(open) {
         launcher.setAttribute('aria-expanded', 'false');
     }
 }
+function setFloatingSize(value) {
+    floatingSize = normalizeSize(value);
+    try { globalThis.localStorage?.setItem(SIZE_KEY, String(floatingSize)); } catch {}
+    showFloatingIcon();
+}
 function showFloatingIcon() {
     if (!active || !launcher) return;
-    const { x, y } = positionPixels(previewPosition || savedPosition, floatingViewport());
+    const target = touchSize(floatingSize);
+    for (const name of ['width', 'height', 'min-width', 'max-width', 'min-height', 'max-height']) launcher.style.setProperty(name, `${target}px`, 'important');
+    const art = launcher.querySelector('.csb-launcher-art');
+    if (art) {
+        art.style.setProperty('width', `${floatingSize}px`, 'important');
+        art.style.setProperty('height', `${floatingSize}px`, 'important');
+        art.style.setProperty('margin', `${(target - floatingSize) / 2}px`, 'important');
+    }
+    launcher.style.setProperty('font-size', `${Math.round(floatingSize * .56)}px`, 'important');
+    launcher.style.setProperty('line-height', `${target}px`, 'important');
+    const { x, y } = positionPixels(previewPosition || savedPosition, floatingViewport(), floatingSize);
     launcher.style.setProperty('left', `${x}px`, 'important');
     launcher.style.setProperty('top', `${y}px`, 'important');
     // The icon itself (not only the panel) must escape clipping/stacking contexts.
@@ -579,14 +596,14 @@ function buildUI() {
     const art = el('img', 'csb-launcher-art');
     art.src = new URL('./assets/strawberry-cake.png', import.meta.url).href;
     art.alt = ''; art.draggable = false; art.setAttribute('aria-hidden', 'true');
-    // 48px touch target; transparent margins leave a roughly 36px visible cake.
+    // Transparent image margins remain proportional; touch target never drops below 48px.
     for (const [name, value] of Object.entries({ display:'block', width:'48px', height:'48px', 'max-width':'none', margin:'0', padding:'0', border:'0', background:'transparent', 'object-fit':'contain', 'image-rendering':'pixelated', 'pointer-events':'none', 'user-select':'none' })) art.style.setProperty(name, value, 'important');
     const control = launcher;
     art.addEventListener('error', () => { art.remove(); control.prepend(el('span', '', '🍰')); });
     badge = el('span', 'csb-badge'); badge.hidden = true; badge.setAttribute('aria-hidden', 'true');
     launcher.append(art, badge);
     detachDrag = attachFloatingDrag(launcher, {
-        getPosition: () => savedPosition, getViewport: floatingViewport,
+        getPosition: () => savedPosition, getViewport: floatingViewport, getSize: () => floatingSize,
         preview: p => { previewPosition = p; showFloatingIcon(); },
         commit: p => { savedPosition = p; previewPosition = null; try { globalThis.localStorage?.setItem(POSITION_KEY, JSON.stringify(p)); } catch {} showFloatingIcon(); },
         restore: () => { previewPosition = null; showFloatingIcon(); },
@@ -643,7 +660,27 @@ function init() {
         const actions = el('div', 'flex-container csb-settings-actions');
         actions.append(button('패널 열기', () => setPanelOpen(true), 'menu_button csb-settings-open'));
         actions.append(button('아이콘 위치 초기화', resetFloatingPosition, 'menu_button csb-settings-reset'));
-        content.append(actions);
+        const sizeRow = el('div', 'csb-size-control');
+        const sizeLabel = el('label', '', '아이콘 크기');
+        sizeLabel.htmlFor = 'csb-icon-size';
+        const sizeInput = el('input');
+        sizeInput.type = 'range'; sizeInput.id = 'csb-icon-size';
+        sizeInput.min = '24'; sizeInput.max = '72'; sizeInput.step = '1';
+        sizeInput.value = String(floatingSize);
+        const sizeValue = el('output');
+        sizeValue.htmlFor = sizeInput.id;
+        const updateSize = () => {
+            setFloatingSize(sizeInput.value);
+            sizeValue.textContent = `${floatingSize}px`;
+            sizeInput.setAttribute('aria-valuetext', `${floatingSize} 픽셀`);
+        };
+        sizeValue.textContent = `${floatingSize}px`;
+        sizeInput.setAttribute('aria-valuetext', `${floatingSize} 픽셀`);
+        sizeInput.addEventListener('input', updateSize);
+        const resetSize = button('↺', () => { sizeInput.value = String(DEFAULT_SIZE); updateSize(); }, 'menu_button', '아이콘 크기 초기화 (48px)');
+        resetSize.setAttribute('aria-label', '아이콘 크기 초기화 (48px)');
+        sizeRow.append(sizeLabel, sizeInput, sizeValue, resetSize);
+        content.append(actions, sizeRow);
         drawer.append(header, content); wrap.append(drawer); settings.append(wrap);
     }
 }
